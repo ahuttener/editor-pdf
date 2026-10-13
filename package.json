@@ -102,13 +102,6 @@
       }
     ],
     "copyright": "© 2026 CyberSecInfo",
-    "asarUnpack": [
-      "engine/**/*",
-      "vendor/**/*",
-      "node_modules/mupdf/**/*",
-      "node_modules/tesseract.js/**/*",
-      "node_modules/tesseract.js-core/**/*"
-    ],
     "mac": {
       "icon": "build/icon-1024.png",
       "category": "public.app-category.productivity",
@@ -125,6 +118,7 @@
         "rpm"
       ],
       "synopsis": "PDF editor"
-    }
+    },
+    "asar": false
   }
 }
