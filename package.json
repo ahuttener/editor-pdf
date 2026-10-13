@@ -3,7 +3,11 @@
   "productName": "Editor PDF",
   "version": "1.0.0",
   "description": "Editor de PDF para Windows: editar texto existente, adicionar texto, imagem e assinatura, organizar páginas e preencher formulários.",
-  "author": "CyberSecInfo",
+  "author": {
+    "name": "CyberSecInfo",
+    "email": "info@cybersecinfo.com",
+    "url": "https://cybersecinfo.com"
+  },
   "license": "UNLICENSED",
   "private": true,
   "main": "main.js",
@@ -117,8 +121,10 @@
         "deb",
         "rpm"
       ],
-      "synopsis": "PDF editor"
+      "synopsis": "PDF editor",
+      "maintainer": "CyberSecInfo <info@cybersecinfo.com>"
     },
     "asar": false
-  }
+  },
+  "homepage": "https://cybersecinfo.com"
 }

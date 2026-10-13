@@ -262,45 +262,13 @@ export const ops = {
       progress?.({ message: 'Convertendo página {n} de {total}…', vars: { n: i + 1, total } });
       const page = doc.loadPage(i);
       const [x0, y0, x1, y1] = page.getBounds();
-      const data = JSON.parse(page.toStructuredText('preserve-images').asJSON());
-      const children = [];
-      let lastBottom = y0;
-      for (const block of data.blocks || []) {
-        const gap = Math.max(0, block.bbox.y - lastBottom);
-        lastBottom = block.bbox.y + block.bbox.h;
-        if (block.type === 'image') {
-          const png = renderRegion(page, block.bbox, 150);
-          if (!png) continue;
-          children.push(new docx.Paragraph({
-            spacing: { before: Math.round(Math.min(gap, 40) * 20) },
-            indent: { left: Math.round(Math.max(0, block.bbox.x - x0 - 36) * 20) },
-            children: [new docx.ImageRun({ type: 'png', data: png, transformation: { width: Math.round(block.bbox.w * 96 / 72), height: Math.round(block.bbox.h * 96 / 72) } })],
-          }));
-          continue;
-        }
-        const runs = [];
-        (block.lines || []).forEach((line, li) => {
-          const font = line.font || {};
-          let text = line.text || '';
-          if (li < block.lines.length - 1) {
-            if (/-$/.test(text)) text = text.slice(0, -1); else text += ' ';
-          }
-          runs.push(new docx.TextRun({
-            text,
-            font: wordFont(font.family, font.name),
-            size: Math.max(2, Math.round((font.size || 11) * 2)),
-            bold: font.weight === 'bold' || /bold|black|heavy/i.test(font.name || ''),
-            italics: font.style === 'italic' || /italic|oblique/i.test(font.name || ''),
-            color: line.color ? line.color.replace('#', '') : undefined,
-          }));
-        });
-        if (!runs.length) continue;
-        children.push(new docx.Paragraph({
-          children: runs,
-          spacing: { before: Math.round(Math.min(gap, 30) * 20), after: 0 },
-          indent: { left: Math.round(Math.max(0, block.bbox.x - x0 - 36) * 20) },
-        }));
-      }
+      // "table-hunt" (com "segment") faz o MuPDF reconhecer tabelas: viram tabelas de verdade no Word
+      let data;
+      try { data = JSON.parse(page.toStructuredText('preserve-images,preserve-whitespace,segment,table-hunt').asJSON()); }
+      catch { data = JSON.parse(page.toStructuredText('preserve-images,preserve-whitespace').asJSON()); }
+      const ctx = { page, x0, lastBottom: y0, consumed: new Set(), extra: new Map(), core: new Map() };
+      prepareTables(data.blocks || [], ctx);
+      const children = docxBlocks(data.blocks || [], ctx);
       if (!children.length) children.push(new docx.Paragraph(''));
       sections.push({
         properties: {
@@ -343,6 +311,172 @@ function invert(m) {
   const c = -m[2] / det;
   const d = m[0] / det;
   return [a, b, c, d, -(a * m[4] + c * m[5]), -(b * m[4] + d * m[5])];
+}
+
+// Todos os blocos de texto da página, em ordem (inclusive dentro de estruturas)
+function flatText(blocks, out = [], inTable = null) {
+  for (const b of blocks) {
+    if (b.type === 'structure') flatText(b.contents || [], out, b.std === 'Table' ? b : inTable);
+    else if (b.type === 'text' && b.bbox) out.push({ block: b, table: inTable });
+  }
+  return out;
+}
+
+const cellsOf = (row) => (row.contents || []).filter((c) => c.std === 'TD' || c.std === 'TH');
+const blocksOf = (row) => cellsOf(row).flatMap((c) => flatText(c.contents || []).map((t) => t.block));
+const textOf = (blocks) => blocks.map((b) => (b.lines || []).map((l) => l.text).join(' ')).join(' ').trim();
+
+// Separa as linhas que são mesmo tabela das linhas da borda que o MuPDF juntou por engano
+// (título acima, total abaixo, frase partida em duas "células")
+function tableCore(table) {
+  const rows = (table.contents || []).filter((c) => c.type === 'structure' && c.std === 'TR');
+  const notTable = (r) => {
+    const filled = cellsOf(r).map((c) => flatText(c.contents || []).map((t) => t.block)).filter((bs) => textOf(bs));
+    if (filled.length < 2) return true;
+    if (filled.length === 2) {
+      const [a, b] = filled.map((bs) => bs[0]);
+      const gap = b.bbox.x - (a.bbox.x + a.bbox.w);
+      const ta = textOf(filled[0]);
+      const tb = textOf(filled[1]);
+      if (gap < 4 && /[\p{L}]$/u.test(ta) && /^[\p{Ll}]/u.test(tb)) return true;
+    }
+    return false;
+  };
+  const before = [];
+  const after = [];
+  while (rows.length && notTable(rows[0])) before.push(rows.shift());
+  while (rows.length && notTable(rows[rows.length - 1])) after.unshift(rows.pop());
+  return { rows, before, after };
+}
+
+// O MuPDF às vezes reconhece só parte das colunas: texto na altura das linhas da tabela e à direita
+// das colunas reconhecidas vira coluna extra (em vez de cair solto depois da tabela)
+function prepareTables(blocks, ctx) {
+  const all = flatText(blocks);
+  const tables = [];
+  const findTables = (list) => { for (const b of list) if (b.type === 'structure') { if (b.std === 'Table') tables.push(b); else findTables(b.contents || []); } };
+  findTables(blocks);
+  for (const table of tables) {
+    const core = tableCore(table);
+    ctx.core.set(table, core);
+    if (!core.rows.length) continue;
+    const rowBlocks = core.rows.map(blocksOf);
+    const own = rowBlocks.flat();
+    if (!own.length) continue;
+    const centers = rowBlocks.map((bs) => (bs.length ? Math.min(...bs.map((b) => b.bbox.y + b.bbox.h / 2)) : null));
+    const top = Math.min(...own.map((b) => b.bbox.y)) - 2;
+    const bottom = Math.max(...own.map((b) => b.bbox.y + b.bbox.h)) + 2;
+    const right = Math.max(...own.map((b) => b.bbox.x + b.bbox.w));
+    const extras = all.filter((t) => t.table !== table && !ctx.consumed.has(t.block)).map((t) => t.block).filter((b) => {
+      const cy = b.bbox.y + b.bbox.h / 2;
+      return cy >= top && cy <= bottom && b.bbox.x >= right - 2;
+    });
+    if (!extras.length) continue;
+    const colsX = [];
+    for (const b of [...extras].sort((a, c) => a.bbox.x - c.bbox.x)) {
+      if (!colsX.length || b.bbox.x - colsX[colsX.length - 1] > 24) colsX.push(b.bbox.x);
+    }
+    const cells = new Map();
+    for (const b of extras) {
+      const cy = b.bbox.y + b.bbox.h / 2;
+      let row = 0;
+      let best = Infinity;
+      centers.forEach((c, i) => { if (c !== null && Math.abs(c - cy) < best) { best = Math.abs(c - cy); row = i; } });
+      let col = 0;
+      for (let k = 0; k < colsX.length; k++) if (b.bbox.x >= colsX[k] - 2) col = k;
+      const key = `${row}:${col}`;
+      if (!cells.has(key)) cells.set(key, []);
+      cells.get(key).push(b);
+      ctx.consumed.add(b);
+    }
+    ctx.extra.set(table, { cols: colsX.length, cells });
+  }
+}
+
+// Converte os blocos do MuPDF (texto, imagem, estrutura/tabela) em elementos do Word
+function docxBlocks(blocks, ctx, inCell = false) {
+  const out = [];
+  for (const block of blocks) {
+    if (block.type === 'grid' || ctx.consumed.has(block)) continue;
+    if (block.type === 'structure') {
+      if (block.std === 'Table') out.push(...docxTable(block, ctx));
+      else out.push(...docxBlocks(block.contents || [], ctx, inCell));
+      continue;
+    }
+    if (!block.bbox) continue;
+    const gap = inCell ? 0 : Math.max(0, block.bbox.y - ctx.lastBottom);
+    if (!inCell) ctx.lastBottom = block.bbox.y + block.bbox.h;
+    const indent = inCell ? 0 : Math.round(Math.max(0, block.bbox.x - ctx.x0 - 36) * 20);
+    if (block.type === 'image') {
+      const png = renderRegion(ctx.page, block.bbox, 150);
+      if (!png) continue;
+      out.push(new docx.Paragraph({
+        spacing: { before: Math.round(Math.min(gap, 40) * 20) },
+        indent: { left: indent },
+        children: [new docx.ImageRun({ type: 'png', data: png, transformation: { width: Math.round(block.bbox.w * 96 / 72), height: Math.round(block.bbox.h * 96 / 72) } })],
+      }));
+      continue;
+    }
+    const runs = [];
+    (block.lines || []).forEach((line, li) => {
+      const font = line.font || {};
+      let text = line.text || '';
+      if (li < block.lines.length - 1) {
+        if (/-$/.test(text)) text = text.slice(0, -1); else text += ' ';
+      }
+      runs.push(new docx.TextRun({
+        text,
+        font: wordFont(font.family, font.name),
+        size: Math.max(2, Math.round((font.size || 11) * 2)),
+        bold: font.weight === 'bold' || /bold|black|heavy/i.test(font.name || ''),
+        italics: font.style === 'italic' || /italic|oblique/i.test(font.name || ''),
+        color: line.color ? line.color.replace('#', '') : undefined,
+      }));
+    });
+    if (!runs.length) continue;
+    out.push(new docx.Paragraph({ children: runs, spacing: { before: Math.round(Math.min(gap, 30) * 20), after: 0 }, indent: { left: indent } }));
+  }
+  return out;
+}
+
+// Devolve [parágrafos antes, tabela, parágrafos depois]
+function docxTable(block, ctx) {
+  const { rows, before, after } = ctx.core.get(block) || tableCore(block);
+  // linha que não é tabela vira um parágrafo só (junta "Orçamento d" + "e móveis")
+  const asParagraph = (r) => {
+    const bs = blocksOf(r).sort((a, b) => a.bbox.x - b.bbox.x);
+    if (!bs.length) return [];
+    let text = '';
+    bs.forEach((b, i) => {
+      const t = textOf([b]);
+      if (i && b.bbox.x - (bs[i - 1].bbox.x + bs[i - 1].bbox.w) > 3) text += ' ';
+      text += t;
+    });
+    const first = bs[0];
+    const merged = { type: 'text', bbox: { x: first.bbox.x, y: Math.min(...bs.map((b) => b.bbox.y)), w: 1, h: Math.max(...bs.map((b) => b.bbox.h)) }, lines: [{ ...first.lines[0], text }] };
+    return docxBlocks([merged], ctx);
+  };
+  if (!rows.length) return [...before, ...after].flatMap(asParagraph);
+  const head = before.flatMap(asParagraph);
+  const cols = Math.max(...rows.map((r) => cellsOf(r).length));
+  const extra = ctx.extra.get(block);
+  const tableRows = rows.map((r, ri) => {
+    const cells = cellsOf(r);
+    while (cells.length < cols) cells.push({ contents: [] });
+    const children = cells.map((c) => {
+      const paras = docxBlocks(c.contents || [], ctx, true);
+      return new docx.TableCell({ children: paras.length ? paras : [new docx.Paragraph('')] });
+    });
+    for (let k = 0; k < (extra?.cols || 0); k++) {
+      const paras = docxBlocks(extra.cells.get(`${ri}:${k}`) || [], { ...ctx, consumed: new Set() }, true);
+      children.push(new docx.TableCell({ children: paras.length ? paras : [new docx.Paragraph('')] }));
+    }
+    return new docx.TableRow({ children });
+  });
+  const bottoms = rows.flatMap(blocksOf).map((x) => x.bbox.y + x.bbox.h);
+  if (bottoms.length) ctx.lastBottom = Math.max(ctx.lastBottom, ...bottoms);
+  const table = new docx.Table({ rows: tableRows, width: { size: 100, type: docx.WidthType.PERCENTAGE } });
+  return [...head, table, ...after.flatMap(asParagraph)];
 }
 
 function wordFont(family, name) {
