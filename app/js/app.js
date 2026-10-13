@@ -1,7 +1,7 @@
 import { pdfjs, fabric, PDFLib, loadPdfjsDocument, newUid } from './libs.js';
 import { buildPdf, collectRedactions, permissionsFrom } from './save.js';
 import { readFormFields, renderFormLayer } from './forms.js';
-import { loadTextRuns, createTextEdit, renderTextHits } from './textedit.js';
+import { loadTextRuns, createTextEdit, renderTextHits, groupParagraphs, createParagraphEdit } from './textedit.js';
 import { askPassword, confirmDialog, choiceDialog, isDialogOpen } from './dialogs.js';
 import { setupFeatures } from './features.js';
 import { t, translateDom, setLang, getLang } from './i18n.js';
@@ -13,7 +13,7 @@ const pagesEl = $('#pages');
 const thumbsEl = $('#thumbs');
 
 const ZOOMS = [0.25, 0.33, 0.5, 0.67, 0.75, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4];
-const DRAG_TOOLS = ['whiteout', 'highlight', 'rect', 'redact', 'ellipse', 'line', 'arrow', 'underline', 'strike'];
+const DRAG_TOOLS = ['whiteout', 'highlight', 'rect', 'redact', 'ellipse', 'line', 'arrow', 'underline', 'strike', 'field-text', 'field-check', 'field-list'];
 const CLICK_TOOLS = ['text', 'note', 'stamp'];
 const IMAGE_MIME = /^image\//;
 
@@ -252,7 +252,7 @@ function materialize(entry) {
   const run = (async () => {
     if (entry.lastJson !== EMPTY_JSON) await loadInto(entry, entry.lastJson);
     if (entry.hfStale) { features?.refreshHeaderFooter(entry); entry.lastJson = snapshot(entry); }
-    if (state.tool === 'edittext') renderTextHits(entry, state.zoom, onPickRun);
+    if (isTextTool()) renderHits(entry);
     return entry.fabric;
   })();
   entry.materializing = run;
@@ -292,7 +292,7 @@ function sizePage(entry) {
   }
   entry.renderedKey = null;
   renderFormLayer(entry, state.formFields, state.zoom, () => setDirty(true));
-  if (state.tool === 'edittext') renderTextHits(entry, state.zoom, onPickRun);
+  if (isTextTool()) renderHits(entry);
   else entry.hitLayer.replaceChildren();
   features?.renderSearch(entry);
   if (entry.visible) renderPage(entry);
@@ -511,7 +511,7 @@ async function rotatePage(entry, dir) {
   entry.lastJson = snapshot(entry);
   sizePage(entry);
   refreshThumb(entry);
-  if (state.tool === 'edittext') ensureRuns(entry);
+  if (isTextTool()) ensureRuns(entry);
   features?.refreshHeaderFooter();
   setDirty(true);
   updateButtons();
@@ -643,7 +643,11 @@ async function exclusive(fn) {
 async function readMeta(bytes) {
   try {
     const doc = await PDFLib.PDFDocument.load(bytes, { updateMetadata: false });
-    return { title: doc.getTitle() || '', author: doc.getAuthor() || '', subject: doc.getSubject() || '', keywords: doc.getKeywords() || '' };
+    const lang = doc.catalog.get(PDFLib.PDFName.of('Lang'));
+    return {
+      title: doc.getTitle() || '', author: doc.getAuthor() || '', subject: doc.getSubject() || '', keywords: doc.getKeywords() || '',
+      lang: lang?.decodeText ? lang.decodeText() : '',
+    };
   } catch { return {}; }
 }
 
@@ -822,7 +826,7 @@ function pushHistory(entry) {
   entry.lastJson = now;
   setDirty(true);
   updateButtons();
-  if (state.tool === 'edittext') renderTextHits(entry, state.zoom, onPickRun);
+  if (isTextTool()) renderHits(entry);
   features?.refreshComments();
 }
 
@@ -839,7 +843,7 @@ async function restore(entry, json) {
     // o cabeçalho/rodapé guardado no passo antigo pode estar com a numeração velha
     if (state.hf) { features?.refreshHeaderFooter(entry); entry.lastJson = snapshot(entry); }
   }
-  if (state.tool === 'edittext' && entry.fabric) renderTextHits(entry, state.zoom, onPickRun);
+  if (state.tool === 'edittext' && entry.fabric) renderHits(entry);
   features?.refreshComments();
 }
 
@@ -957,6 +961,15 @@ function wireCanvas(entry) {
     state.suspend++;
     canvas.remove(d.preview);
     state.suspend--;
+    if (d.tool.startsWith('field-')) {
+      const type = d.tool.slice(6);
+      const size = { text: [180, 22], check: [14, 14], list: [160, 22] }[type];
+      let width = Math.abs(d.x1 - d.x0);
+      let height = Math.abs(d.y1 - d.y0);
+      if (width < 6 && height < 6) [width, height] = size;
+      features.createField(entry, { left: Math.min(d.x0, d.x1), top: Math.min(d.y0, d.y1), width, height }, type);
+      return;
+    }
     const obj = makeShape(d.tool, d.x0, d.y0, d.x1, d.y1);
     if (obj) addObjects(entry, [obj]);
   });
@@ -1052,16 +1065,29 @@ async function addImageFile(entry, file, kind = 'image', maxRatio = 0.4, at = nu
 
 // ---------- editar texto existente ----------
 
+const isTextTool = () => state.tool === 'edittext' || state.tool === 'editpara';
+
+function renderHits(entry) {
+  if (!isTextTool()) { entry.hitLayer.replaceChildren(); return; }
+  if (state.tool === 'editpara') renderTextHits(entry, state.zoom, onPickParagraph, true);
+  else renderTextHits(entry, state.zoom, onPickRun);
+}
+
 async function ensureRuns(entry) {
   if (!entry.runs) {
     try { entry.runs = await loadTextRuns(entry); } catch (err) { console.error(err); entry.runs = []; }
+    entry.paras = groupParagraphs(entry, entry.runs);
   }
-  if (state.tool === 'edittext') renderTextHits(entry, state.zoom, onPickRun);
+  if (isTextTool()) renderHits(entry);
   return entry.runs;
 }
 
-function onPickRun(entry, run) {
-  const { cover, text } = createTextEdit(entry, run);
+function onPickParagraph(entry, para) {
+  return onPickRun(entry, para, createParagraphEdit(entry, para));
+}
+
+function onPickRun(entry, run, made = null) {
+  const { cover, text } = made || createTextEdit(entry, run);
   state.suspend++;
   entry.fabric.add(cover, text);
   state.suspend--;
@@ -1097,6 +1123,7 @@ function applyToolTo(entry) {
 const HINTS = {
   select: 'Clique num item para mover, redimensionar ou excluir. Clique duas vezes num texto para editar.',
   edittext: 'Passe o mouse sobre o PDF e clique na frase que quer alterar.',
+  editpara: 'Clique num parágrafo: ao editar, o texto se reorganiza nas linhas.',
   text: 'Clique na página onde quer escrever.',
   whiteout: 'Arraste sobre a área: o que estiver embaixo é apagado do PDF ao salvar.',
   redact: 'Arraste para tarjar: texto e imagens embaixo são removidos de verdade ao salvar.',
@@ -1109,6 +1136,9 @@ const HINTS = {
   arrow: 'Arraste do início para a ponta da seta.',
   pen: 'Desenhe com o mouse. Esc para voltar.',
   note: 'Clique onde quer deixar o comentário.',
+  'field-text': 'Arraste para desenhar o campo de texto.',
+  'field-check': 'Clique ou arraste onde vai a caixa de marcar.',
+  'field-list': 'Arraste para desenhar a lista de opções.',
   stamp: 'Clique na página onde quer colocar o carimbo.',
 };
 
@@ -1469,7 +1499,7 @@ const ctx = {
   state, api, fabric, PDFLib, t, toast, busy, setDirty, updateButtons, formatBytes, baseName, hasDoc,
   openFiles, openPdf, insertDocs, insertBlankPage, movePage, rotatePage, deletePages, duplicatePages, replaceDocBytes, targetPages,
   materialize, trimMemory, exclusive, addText, addImage, addImageFile, addObjects, removeObjects, makeShape, toEmbeddableImage, imagesToPdf,
-  snapshot, ensureRuns, onPickRun, pushHistory, undo, redo, save, buildFinal, suggestedPath, setZoom, setTool, setCurrent, fitWidth, renderPage, finishEditing,
+  snapshot, ensureRuns, onPickRun, onPickParagraph, pushHistory, undo, redo, save, buildFinal, suggestedPath, setZoom, setTool, setCurrent, fitWidth, renderPage, finishEditing,
 };
 let features = null;
 

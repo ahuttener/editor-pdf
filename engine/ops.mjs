@@ -1,13 +1,13 @@
 // Operações do motor PDF (MuPDF + Tesseract): senha/criptografia, redação (apagar de verdade),
 // compressão, exportação de páginas como imagem, texto com estilo e OCR.
 import * as mupdf from 'mupdf';
-import { PDFDocument, StandardFonts, degrees } from 'pdf-lib';
+import { PDFDocument, StandardFonts, PDFName, PDFHexString, PDFArray, PDFDict, degrees } from 'pdf-lib';
 import fontkit from '@pdf-lib/fontkit';
 import { createWorker } from 'tesseract.js';
 import * as docx from 'docx';
 import fs from 'node:fs/promises';
 
-const config = { tessdata: null, tessCache: null, ocrFont: null };
+const config = { tessdata: null, tessCache: null, ocrFont: null, srgb: null };
 export function configure(values) { Object.assign(config, values); }
 
 const open = (bytes) => mupdf.Document.openDocument(bytes, 'application/pdf').asPDF();
@@ -253,6 +253,95 @@ export const ops = {
     return { bytes: await out.save({ useObjectStreams: true }), pages: found.length, words: count };
   },
 
+  // Fontes sem o arquivo da fonte dentro do PDF (impedem um PDF/A válido)
+  fontReport({ bytes }) {
+    return { missing: missingFonts(open(bytes)) };
+  },
+
+  // PDF/A-2b: metadados XMP, perfil de cor sRGB, identificador, sem anotações sem aparência.
+  // mode 'keep' exige fontes incorporadas; mode 'raster' converte as páginas em imagem + OCR
+  async pdfa({ bytes, title, lang, mode }, progress) {
+    if (!config.srgb) throw new Error('Perfil de cor sRGB não encontrado neste computador.');
+    let src = bytes;
+    if (mode === 'raster') {
+      const doc = open(bytes);
+      const out = await PDFDocument.create();
+      const total = doc.countPages();
+      for (let i = 0; i < total; i++) {
+        progress?.({ message: 'Convertendo página {n} de {total}…', vars: { n: i + 1, total } });
+        const page = doc.loadPage(i);
+        const [x0, y0, x1, y1] = page.getBounds();
+        const scale = safeScale(page, 200 / 72);
+        const jpg = page.toPixmap(mupdf.Matrix.scale(scale, scale), mupdf.ColorSpace.DeviceRGB, false, true).asJPEG(85, false);
+        const img = await out.embedJpg(jpg);
+        out.addPage([x1 - x0, y1 - y0]).drawImage(img, { x: 0, y: 0, width: x1 - x0, height: y1 - y0 });
+      }
+      src = (await ops.ocr({ bytes: new Uint8Array(await out.save()), force: true }, progress)).bytes;
+    } else {
+      const missing = missingFonts(open(src));
+      if (missing.length) return { ok: false, fonts: missing };
+    }
+    progress?.({ message: 'Gerando PDF/A…' });
+    const out = await PDFDocument.load(src, { updateMetadata: false });
+    // anotações sem aparência (ex.: notas) não são permitidas no PDF/A
+    for (const page of out.getPages()) {
+      const annots = page.node.Annots();
+      if (!annots) continue;
+      const keep = annots.asArray().filter((ref) => {
+        const dict = out.context.lookup(ref, PDFDict);
+        const sub = dict.get(PDFName.of('Subtype'))?.toString();
+        return sub === '/Link' || sub === '/Popup' || dict.has(PDFName.of('AP'));
+      });
+      page.node.set(PDFName.of('Annots'), out.context.obj(keep));
+    }
+    const now = new Date();
+    const created = out.getCreationDate() || now;
+    const docTitle = title || out.getTitle() || 'Documento';
+    out.setTitle(docTitle, { showInWindowTitleBar: true });
+    out.setProducer('Editor PDF (CyberSecInfo)');
+    out.setCreator('Editor PDF');
+    out.setCreationDate(created);
+    out.setModificationDate(now);
+    if (lang) out.setLanguage(lang);
+    const esc = (v) => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const iso = (d) => d.toISOString().replace(/\.\d{3}Z$/, 'Z');
+    const xmp = `<?xpacket begin="\ufeff" id="W5M0MpCehiHzreSzNTczkc9d"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/">
+ <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+  <rdf:Description rdf:about="" xmlns:pdfaid="http://www.aiim.org/pdfa/ns/id/">
+   <pdfaid:part>2</pdfaid:part>
+   <pdfaid:conformance>B</pdfaid:conformance>
+  </rdf:Description>
+  <rdf:Description rdf:about="" xmlns:dc="http://purl.org/dc/elements/1.1/">
+   <dc:format>application/pdf</dc:format>
+   <dc:title><rdf:Alt><rdf:li xml:lang="x-default">${esc(docTitle)}</rdf:li></rdf:Alt></dc:title>
+  </rdf:Description>
+  <rdf:Description rdf:about="" xmlns:xmp="http://ns.adobe.com/xap/1.0/">
+   <xmp:CreateDate>${iso(created)}</xmp:CreateDate>
+   <xmp:ModifyDate>${iso(now)}</xmp:ModifyDate>
+   <xmp:MetadataDate>${iso(now)}</xmp:MetadataDate>
+   <xmp:CreatorTool>Editor PDF</xmp:CreatorTool>
+  </rdf:Description>
+  <rdf:Description rdf:about="" xmlns:pdf="http://ns.adobe.com/pdf/1.3/">
+   <pdf:Producer>Editor PDF (CyberSecInfo)</pdf:Producer>
+  </rdf:Description>
+ </rdf:RDF>
+</x:xmpmeta>
+<?xpacket end="w"?>`;
+    const meta = out.context.stream(new TextEncoder().encode(xmp), { Type: 'Metadata', Subtype: 'XML' });
+    out.catalog.set(PDFName.of('Metadata'), out.context.register(meta));
+    const icc = await fs.readFile(config.srgb);
+    const iccRef = out.context.register(out.context.flateStream(icc, { N: 3 }));
+    const intent = out.context.obj({
+      Type: 'OutputIntent', S: 'GTS_PDFA1', OutputConditionIdentifier: PDFHexString.fromText('sRGB IEC61966-2.1'),
+      Info: PDFHexString.fromText('sRGB IEC61966-2.1'), DestOutputProfile: iccRef,
+    });
+    out.catalog.set(PDFName.of('OutputIntents'), out.context.obj([intent]));
+    const id = PDFHexString.of([...crypto.getRandomValues(new Uint8Array(16))].map((b) => b.toString(16).padStart(2, '0')).join(''));
+    out.context.trailerInfo.ID = out.context.obj([id, id]);
+    return { ok: true, bytes: new Uint8Array(await out.save({ useObjectStreams: false })) };
+  },
+
   // PDF -> Word (.docx): parágrafos com fonte, tamanho, negrito, itálico, cor e imagens
   async toDocx({ bytes, title }, progress) {
     const doc = open(bytes);
@@ -302,6 +391,23 @@ function safeScale(page, wanted) {
   const [x0, y0, x1, y1] = page.getBounds();
   const area = Math.max(1, (x1 - x0) * (y1 - y0));
   return Math.min(wanted, Math.sqrt(MAX_PIXELS / area));
+}
+
+// Lista as fontes usadas que não têm o arquivo da fonte embutido
+function missingFonts(doc) {
+  const missing = new Set();
+  const count = doc.countObjects();
+  for (let n = 1; n < count; n++) {
+    let o;
+    try { o = doc.newIndirect(n, 0); } catch { continue; }
+    if (!o.isDictionary() || o.get('Type').toString() !== '/Font') continue;
+    const sub = o.get('Subtype').toString();
+    if (sub === '/Type3' || sub === '/Type0') continue; // Type0: a fonte real está nas DescendantFonts
+    const desc = o.get('FontDescriptor');
+    const embedded = desc && !desc.isNull() && ['FontFile', 'FontFile2', 'FontFile3'].some((k) => !desc.get(k).isNull());
+    if (!embedded) missing.add(o.get('BaseFont').toString().replace(/^\//, ''));
+  }
+  return [...missing];
 }
 
 function invert(m) {

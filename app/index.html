@@ -45,6 +45,7 @@
     <div class="panel active" data-panel="edit">
       <button class="tool active" data-tool="select" title="Selecionar e mover (Esc)">Selecionar</button>
       <button class="tool" data-tool="edittext" title="Clique numa frase do PDF para alterar o texto">Editar texto</button>
+      <button class="tool" data-tool="editpara" title="Clique num parágrafo: o texto se reorganiza nas linhas ao editar">Editar parágrafo</button>
       <button class="tool" data-tool="text" title="Clique na página para escrever">Texto</button>
       <button class="tool" data-action="image" title="Inserir imagem ou logo (PNG, JPG, WEBP, GIF, BMP, SVG)">Imagem</button>
       <button class="tool" data-action="signature" title="Assinar: desenhar, digitar ou usar imagem">Assinatura</button>
@@ -96,7 +97,12 @@
       <span class="sep"></span>
       <button class="tool" data-action="ocr" title="Reconhecer texto de PDF escaneado (português e inglês)">OCR (reconhecer texto)</button>
       <button class="tool" data-action="compress" title="Diminuir o tamanho do arquivo">Comprimir</button>
-      <button class="tool" data-action="properties" title="Título, autor, assunto, palavras-chave">Propriedades</button>
+      <button class="tool" data-action="properties" title="Título, autor, assunto, palavras-chave, idioma">Propriedades</button>
+      <button class="tool" data-action="compare" title="Comparar com outro PDF e marcar o que mudou">Comparar PDFs</button>
+      <span class="sep"></span>
+      <button class="tool" data-tool="field-text" title="Criar campo de texto preenchível">Campo de texto</button>
+      <button class="tool" data-tool="field-check" title="Criar caixa de marcar">Caixa de marcar</button>
+      <button class="tool" data-tool="field-list" title="Criar lista de opções">Lista de opções</button>
     </div>
     <div class="panel" data-panel="convert">
       <button class="tool" data-action="toWord" title="Converter para Word (.docx)">PDF → Word</button>
@@ -104,6 +110,7 @@
       <button class="tool" data-action="toText" title="Salvar o texto (.txt)">PDF → Texto</button>
       <span class="sep"></span>
       <button class="tool" data-action="imagesToPdf" title="Criar um PDF a partir de imagens">Imagens → PDF</button>
+      <button class="tool" data-action="pdfa" title="Salvar em PDF/A-2b para arquivamento de longo prazo">Salvar como PDF/A</button>
     </div>
     <div class="panel" data-panel="protect">
       <button class="tool" data-tool="redact" title="Arraste para tarjar: remove de verdade texto e imagens embaixo">Tarjar (ocultar dados)</button>

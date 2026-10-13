@@ -71,6 +71,19 @@ export async function runSelftest(ctx, cfg) {
     await ctx.undo();
     step('desfazer/refazer', afterUndo === before && afterRedo === before + 1, { before, afterUndo, afterRedo });
 
+    // ---------- editar parágrafo (refluxo) ----------
+    ctx.setTool('editpara');
+    await ctx.ensureRuns(p2);
+    const para = p2.paras.find((p) => p.str.includes('regido'));
+    step('agrupa as 3 linhas do parágrafo', para && para.lineKeys.length === 3, para?.str);
+    const paraText = ctx.onPickParagraph(p2, para);
+    paraText.exitEditing();
+    paraText.set('text', 'Este contrato segue a lei brasileira. Fica eleito o foro da comarca de Campinas, com renúncia a qualquer outro, por mais privilegiado que seja, para resolver quaisquer dúvidas sobre este instrumento.');
+    paraText.initDimensions();
+    ctx.pushHistory(p2);
+    step('texto novo se reorganiza em várias linhas', paraText.textLines.length >= 3, paraText.textLines);
+    ctx.setTool('select');
+
     // ---------- ferramentas de desenho e comentário ----------
     ctx.setTool('select');
     const novo = ctx.addText(p2, new fabric.Point(72, 330), 'Olá, João — teste de acentuação: ção, ü, €');
@@ -120,6 +133,16 @@ export async function runSelftest(ctx, cfg) {
     ctx.setCurrent(anexo);
     const blank = await ctx.insertBlankPage();
     ctx.addText(blank, new fabric.Point(72, 100), 'Página em branco inserida').exitEditing();
+    let creating = features.createField(blank, { left: 72, top: 150, width: 200, height: 22 }, 'text');
+    await answerDialog({ name: 'email' });
+    await creating;
+    creating = features.createField(blank, { left: 72, top: 190, width: 14, height: 14 }, 'check');
+    await answerDialog({ name: 'concordo', required: true });
+    await creating;
+    creating = features.createField(blank, { left: 72, top: 220, width: 160, height: 22 }, 'list');
+    await answerDialog({ name: 'plano', options: 'Básico\nPro\nEmpresa' });
+    await creating;
+    step('cria 3 campos de formulário', blank.fabric.getObjects().filter((o) => o.kind === 'field').length === 3);
     await ctx.duplicatePages([anexo]);
     step('páginas: inserir, mover, branco, duplicar', state.pages.length === 5 && state.pages[0] === anexo, state.pages.map((p) => `${p.docKey}:${p.index}`));
     const dup = state.pages[1];
@@ -169,6 +192,15 @@ export async function runSelftest(ctx, cfg) {
     await answerDialog({ level: 'high' });
     await pending;
     step('comprimir', !!state.lastCompress, state.lastCompress);
+
+    // ---------- comparar com o contrato original ----------
+    const comparing = features.compare(cfg.main);
+    await until(() => !$('#dialog').hidden);
+    const cmp = await comparing;
+    await answerDialog({});
+    step('comparação acha o que mudou', cmp && cmp.added.some((d) => d.text.includes('2.500,00')) && cmp.removed.some((d) => d.text.includes('1.000,00')),
+      cmp && { added: cmp.added.slice(0, 5), removed: cmp.removed.slice(0, 5) });
+    features.clearCompare();
 
     // ---------- reabrir o resultado (pede a senha) ----------
     state.dirty = false;
@@ -233,6 +265,15 @@ export async function runSelftest(ctx, cfg) {
     step('OCR em PDF escaneado', before0 === 0 && ocr?.total === 1 && runsAfter.some((r) => /ALUGUEL/i.test(r.str)), { before0, ocr, sample: runsAfter.slice(0, 3).map((r) => r.str) });
     const ocrSaved = await ctx.save(false, 'ocr.pdf');
     step('salva o PDF com OCR', !!ocrSaved);
+    // PDF/A do escaneado (fontes já incorporadas pelo OCR: mantém as páginas)
+    step('PDF/A do escaneado (direto)', !!await features.pdfa());
+
+    // PDF/A do contrato (fontes não incorporadas: converte em imagem + OCR, com confirmação)
+    state.dirty = false;
+    await ctx.openFiles([cfg.main]);
+    const converting = features.pdfa();
+    await answerDialog({});
+    step('PDF/A do contrato (imagem + OCR)', !!await converting);
     await api.testScreenshot('9-ocr.png');
   } catch (err) {
     step('erro inesperado', false, String(err?.stack || err));

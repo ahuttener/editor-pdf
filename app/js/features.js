@@ -1,9 +1,9 @@
 // Funções de "programa completo": páginas, documento, conversões, proteção, comentários,
 // carimbos, busca, marcadores, impressão e arquivos recentes.
-import { newUid } from './libs.js';
+import { newUid, loadPdfjsDocument } from './libs.js';
 import {
   formDialog, confirmDialog, choiceDialog, passwordDialog, watermarkDialog, headerFooterDialog, propertiesDialog,
-  compressDialog, splitDialog, imagesExportDialog, ocrDialog, aboutDialog,
+  compressDialog, splitDialog, imagesExportDialog, ocrDialog, aboutDialog, fieldDialog,
 } from './dialogs.js';
 import { signatureDialog } from './signature.js';
 import { loadTextRuns } from './textedit.js';
@@ -27,7 +27,7 @@ export function setupFeatures(ctx) {
       busy(label);
       try { return await fn(); } catch (err) {
         console.error(err);
-        toast(t('Não deu certo: {erro}', { erro: err?.message || err }), true);
+        toast(t('Não deu certo: {erro}', { erro: t(String(err?.message || err).replace(/^Error invoking remote method '\w+': (Error: )?/, '')) }), true);
         return null;
       } finally { busy(false); }
     });
@@ -364,6 +364,125 @@ export function setupFeatures(ctx) {
     });
   }
 
+  // ---------- formulário: criar campos ----------
+
+  let fieldCounter = 0;
+  async function createField(entry, box, type) {
+    const prefix = { text: 'texto', check: 'marcar', list: 'lista' }[type];
+    const v = await fieldDialog(type, `${prefix}${++fieldCounter}`);
+    if (!v) return null;
+    const options = type === 'list' ? v.options.split('\n').map((o) => o.trim()).filter(Boolean) : undefined;
+    const rect = new fabric.Rect({
+      left: box.left, top: box.top, width: box.width, height: box.height,
+      fill: 'rgba(31, 94, 255, 0.08)', stroke: '#1f5eff', strokeWidth: 1, strokeDashArray: [4, 3], strokeUniform: true,
+    });
+    const label = new fabric.FabricText(type === 'check' ? '✓' : `${v.name}${type === 'list' ? ' ▾' : ''}`, {
+      left: box.left + 3, top: box.top + Math.max(0, (box.height - Math.min(10, box.height * 0.7)) / 2),
+      fontSize: Math.min(10, box.height * 0.7), fontFamily: 'Arial', fill: '#1f5eff',
+    });
+    const group = new fabric.Group([rect, label], {
+      kind: 'field', uid: newUid(),
+      field: { type, name: v.name.trim(), options, multiline: !!v.multiline, required: !!v.required },
+    });
+    ctx.addObjects(entry, [group]);
+    ctx.setTool('select');
+    return group;
+  }
+
+  // ---------- comparar dois PDFs ----------
+
+  const compareMarks = new Map(); // página -> trechos que só existem no documento aberto
+  function lcsDiff(a, b) {
+    const n = a.length;
+    const m = b.length;
+    const dp = Array.from({ length: n + 1 }, () => new Uint16Array(m + 1));
+    for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+    const onlyA = [];
+    const onlyB = [];
+    let i = 0;
+    let j = 0;
+    while (i < n && j < m) {
+      if (a[i] === b[j]) { i++; j++; } else if (dp[i + 1][j] >= dp[i][j + 1]) onlyA.push(i++); else onlyB.push(j++);
+    }
+    while (i < n) onlyA.push(i++);
+    while (j < m) onlyB.push(j++);
+    return { onlyA, onlyB };
+  }
+
+  async function compare(given) {
+    if (!requireDoc()) return null;
+    const file = given || (await api.pickFiles('pdf')).find((f) => !/^image\//.test(f.mime || ''));
+    if (!file) return null;
+    return task('Comparando…', async () => {
+      const mine = await loadPdfjsDocument(await ctx.buildFinal({ encrypt: false }));
+      const other = await loadPdfjsDocument(new Uint8Array(file.data));
+      const pseudo = (proxy, index, key) => ({ proxy, docKey: key, index, rotation: () => proxy.rotate || 0, viewport: (scale = 1) => proxy.getViewport({ scale }), plainObjects: () => [] });
+      const norm = (s) => s.replace(/\s+/g, ' ').trim();
+      compareMarks.clear();
+      const removed = [];
+      const added = [];
+      const total = Math.max(mine.numPages, other.numPages);
+      for (let i = 0; i < total; i++) {
+        const runsA = i < mine.numPages ? await loadTextRuns(pseudo(await mine.getPage(i + 1), i, 'cmpA'), { includeRotated: true }) : [];
+        const runsB = i < other.numPages ? await loadTextRuns(pseudo(await other.getPage(i + 1), i, 'cmpB'), { includeRotated: true }) : [];
+        const { onlyA, onlyB } = lcsDiff(runsA.map((r) => norm(r.str)), runsB.map((r) => norm(r.str)));
+        if (onlyA.length) compareMarks.set(i, onlyA.map((k) => runsA[k]));
+        for (const k of onlyA) added.push({ page: i + 1, text: norm(runsA[k].str) });
+        for (const k of onlyB) removed.push({ page: i + 1, text: norm(runsB[k].str) });
+      }
+      mine.loadingTask.destroy();
+      other.loadingTask.destroy();
+      for (const p of state.pages) renderSearch(p);
+      state.lastCompare = { added, removed, pagesA: state.pages.length, pagesB: total };
+      const lines = [];
+      if (!added.length && !removed.length) lines.push(t('Nenhuma diferença de texto encontrada.'));
+      for (const d of added.slice(0, 25)) lines.push(`+ ${t('pág. {n}', { n: d.page })}: ${d.text}`);
+      for (const d of removed.slice(0, 25)) lines.push(`− ${t('pág. {n}', { n: d.page })}: ${d.text}`);
+      if (added.length + removed.length > 50) lines.push('…');
+      const body = document.createElement('pre');
+      body.className = 'compare-list';
+      body.textContent = lines.join('\n');
+      formDialog({
+        title: t('Comparação com "{nome}"', { nome: file.name }),
+        fields: [{ type: 'note', text: t('{a} trecho(s) só neste documento (marcados em vermelho nas páginas) e {r} só no outro.', { a: added.length, r: removed.length }) }],
+        body, ok: 'Fechar', cancel: null,
+      });
+      return state.lastCompare;
+    });
+  }
+
+  function clearCompare() {
+    if (!compareMarks.size) return;
+    compareMarks.clear();
+    for (const p of state.pages) renderSearch(p);
+  }
+
+  // ---------- PDF/A (arquivamento) ----------
+
+  async function pdfa() {
+    if (!requireDoc()) return null;
+    if (state.protection) { toast('PDF/A não permite senha. Use Proteger → Remover senha antes de gerar o PDF/A.', true); return null; }
+    const full = await task('Preparando…', () => ctx.buildFinal({ encrypt: false }));
+    if (!full) return null;
+    const { missing } = await api.engine('fontReport', { bytes: full });
+    let mode = 'keep';
+    if (missing.length) {
+      const ok = await confirmDialog('PDF/A',
+        t('Este PDF usa fontes que não estão dentro do arquivo ({fontes}). Para um PDF/A válido, as páginas serão convertidas em imagem com o texto reconhecido por OCR (continua pesquisável e copiável). Continuar?', { fontes: missing.slice(0, 6).join(', ') }),
+        'Converter');
+      if (!ok) return null;
+      mode = 'raster';
+    }
+    return task('Gerando PDF/A…', async () => {
+      const lang = state.meta.lang || (getLang() === 'en' ? 'en-US' : 'pt-BR');
+      const r = await api.engine('pdfa', { bytes: full, title: state.meta.title || ctx.baseName(), lang, mode });
+      if (!r.ok) throw new Error(t('fontes não incorporadas: {fontes}', { fontes: r.fonts.join(', ') }));
+      const result = await api.savePdf(r.bytes, { saveAs: true, title: t('Salvar PDF/A'), suggestedPath: ctx.suggestedPath(' (PDF-A)'), selftestName: state.selftest ? `pdfa-${(state.pdfaCount = (state.pdfaCount || 0) + 1)}.pdf` : undefined });
+      if (result) toast(t('PDF/A salvo: {nome}', { nome: result.name }), false, { label: 'Mostrar na pasta', run: () => api.showInFolder(result.path) });
+      return result;
+    });
+  }
+
   // ---------- converter ----------
 
   async function toWord() {
@@ -478,6 +597,7 @@ export function setupFeatures(ctx) {
   }
 
   function closeSearch() {
+    clearCompare();
     if ($('#searchbar').hidden) return;
     $('#searchbar').hidden = true;
     clearSearch();
@@ -521,6 +641,12 @@ export function setupFeatures(ctx) {
     if (!entry.searchLayer) return;
     entry.searchLayer.replaceChildren();
     const z = state.zoom;
+    for (const run of compareMarks.get(state.pages.indexOf(entry)) || []) {
+      const el = document.createElement('div');
+      el.className = 'diff-hit';
+      Object.assign(el.style, { left: `${(run.left - 2) * z}px`, top: `${(run.top - 2) * z}px`, width: `${(run.width + 4) * z}px`, height: `${(run.bottom - run.top + 4) * z}px` });
+      entry.searchLayer.append(el);
+    }
     searchHits.forEach((h, i) => {
       if (h.entry !== entry) return;
       const el = document.createElement('div');
@@ -682,6 +808,8 @@ export function setupFeatures(ctx) {
     password, removePassword,
     print,
     about: () => aboutDialog('1.0.0'),
+    compare: () => compare(),
+    pdfa: () => pdfa(),
   };
 
   $('#btn-print').addEventListener('click', () => run('print'));
@@ -694,7 +822,7 @@ export function setupFeatures(ctx) {
   }
 
   return {
-    run, actions, addNote, placeStamp, refreshComments, refreshHeaderFooter,
+    createField, compare, clearCompare, pdfa, run, actions, addNote, placeStamp, refreshComments, refreshHeaderFooter,
     openSearch, closeSearch, clearSearch, runSearch, renderSearch, loadOutline, loadRecent,
     gotoHit, parseRanges, ocr, splitPdf, toImages, formDialog,
   };

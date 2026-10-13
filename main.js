@@ -154,6 +154,14 @@ async function addRecent(filePath) {
 
 let engine = null;
 let ocrFontPath = null; // fonte usada na camada de texto do OCR (definida ao iniciar)
+let srgbPath = null; // perfil de cor sRGB do sistema (exigido pelo PDF/A)
+const SRGB_CANDIDATES = [
+  path.join(process.env.WINDIR || 'C:\\Windows', 'System32', 'spool', 'drivers', 'color', 'sRGB Color Space Profile.icm'),
+  '/System/Library/ColorSync/Profiles/sRGB Profile.icc',
+  '/usr/share/color/icc/colord/sRGB.icc',
+  '/usr/share/color/icc/sRGB.icc',
+  '/usr/share/color/icc/ghostscript/srgb.icc',
+];
 let engineSeq = 0;
 const enginePending = new Map();
 
@@ -167,6 +175,7 @@ function getEngine() {
       tessdata: unpacked(path.join(ROOT, 'vendor', 'tessdata')),
       tessCache: path.join(app.getPath('userData'), 'ocr-cache'),
       ocrFont: ocrFontPath,
+      srgb: srgbPath,
     },
   });
   const self = engine;
@@ -189,7 +198,7 @@ function getEngine() {
 }
 
 // Cada operação tem prazo; se um PDF travar o motor, ele é reiniciado e a operação falha com aviso
-const ENGINE_TIMEOUT = { ocr: 20 * 60e3, toDocx: 10 * 60e3, compress: 10 * 60e3, renderPages: 10 * 60e3 };
+const ENGINE_TIMEOUT = { pdfa: 30 * 60e3, ocr: 20 * 60e3, toDocx: 10 * 60e3, compress: 10 * 60e3, renderPages: 10 * 60e3 };
 function engineCall(op, args) {
   return new Promise((resolve, reject) => {
     const id = ++engineSeq;
@@ -211,7 +220,7 @@ function engineCall(op, args) {
   });
 }
 
-const ENGINE_OPS = new Set(['inspect', 'unlock', 'redact', 'finalize', 'compress', 'renderPages', 'structuredText', 'toDocx', 'ocr']);
+const ENGINE_OPS = new Set(['inspect', 'unlock', 'redact', 'finalize', 'compress', 'renderPages', 'structuredText', 'toDocx', 'ocr', 'fontReport', 'pdfa']);
 
 // ---------- janela ----------
 
@@ -288,6 +297,7 @@ if (!selftestDir && !app.requestSingleInstanceLock()) {
 
     // No Mac o menu é necessário para Cmd+C/Cmd+V/Cmd+Q; no Windows e Linux a janela fica sem menu
     ocrFontPath = await findFontFile(FONT_FILES.Arial[0]);
+    for (const p of SRGB_CANDIDATES) { try { await fs.access(p); srgbPath = p; break; } catch { /* próximo */ } }
     Menu.setApplicationMenu(IS_MAC ? Menu.buildFromTemplate([{ role: 'appMenu' }, { role: 'editMenu' }, { role: 'windowMenu' }]) : null);
     const file = fileArgFrom(process.argv);
     if (file) {
@@ -337,10 +347,11 @@ ipcMain.handle('file:open', async () => {
 // kind: 'image' (uma imagem), 'images' (várias imagens) ou qualquer outro (PDFs e imagens)
 ipcMain.handle('file:pickMany', async (_e, kind) => {
   const onlyImages = kind === 'image' || kind === 'images';
+  const onlyPdf = kind === 'pdf';
   const r = await dialog.showOpenDialog(win, {
-    title: tr(onlyImages ? 'Escolher imagem' : 'Inserir páginas'),
-    filters: onlyImages ? [{ name: tr('Imagens'), extensions: IMAGE_EXT }] : [{ name: tr('PDF e imagens'), extensions: ['pdf', ...IMAGE_EXT] }],
-    properties: kind === 'image' ? ['openFile'] : ['openFile', 'multiSelections'],
+    title: tr(onlyImages ? 'Escolher imagem' : onlyPdf ? 'Abrir' : 'Inserir páginas'),
+    filters: onlyImages ? [{ name: tr('Imagens'), extensions: IMAGE_EXT }] : onlyPdf ? [{ name: 'PDF', extensions: ['pdf'] }] : [{ name: tr('PDF e imagens'), extensions: ['pdf', ...IMAGE_EXT] }],
+    properties: kind === 'image' || onlyPdf ? ['openFile'] : ['openFile', 'multiSelections'],
   });
   if (r.canceled) return [];
   return Promise.all(r.filePaths.map(readUserFile));

@@ -51,6 +51,13 @@ const form = doc.getForm();
 check('campo nome', form.getTextField('nome').getText() === 'Adriano Hüttener');
 check('caixa aceito', form.getCheckBox('aceito').isChecked());
 check('cidade = Cork', form.getDropdown('cidade').getSelected()[0] === 'Cork');
+{
+  const names = form.getFields().map((f) => f.getName());
+  const plano = names.includes('plano') ? form.getDropdown('plano').getOptions() : [];
+  check('campos criados (email, concordo, plano)', names.includes('email') && names.includes('concordo') && plano.join('|') === 'Básico|Pro|Empresa', { names, plano });
+  check('campo obrigatório marcado', names.includes('concordo') && form.getCheckBox('concordo').isRequired());
+}
+check('parágrafo editado com o texto novo', pages[3]?.text.includes('Campinas') && !pages[3]?.text.includes('São Paulo'), pages[3]?.text);
 check('propriedades (título/autor)', doc.getTitle() === 'Contrato de teste' && doc.getAuthor() === 'CyberSecInfo', { t: doc.getTitle(), a: doc.getAuthor() });
 
 // --- exportações ---
@@ -85,6 +92,22 @@ check('grande: texto na página 36 (editada longe da tela)', big[34]?.text.inclu
     if (o.isStream() && o.readStream().asString().includes('SEGREDO')) leaked = true;
   }
   check('grande: página excluída sumiu DE DENTRO do arquivo', !leaked && !Buffer.from(bigBytes).includes('SEGREDO'));
+}
+
+// --- PDF/A validado pelo veraPDF (se estiver instalado) ---
+{
+  const vera = path.join(process.env.USERPROFILE || process.env.HOME || '', 'Tools', 'verapdf', process.platform === 'win32' ? 'verapdf.bat' : 'verapdf');
+  for (const name of ['pdfa-1.pdf', 'pdfa-2.pdf']) {
+    const file = path.join(dir, name);
+    if (!await exists(file)) { check(`${name} gerado`, false); continue; }
+    if (!await exists(vera)) { console.log(`(info) veraPDF não instalado; ${name} não validado`); continue; }
+    const { execFileSync } = await import('node:child_process');
+    const javaHome = 'C:\\Program Files\\Eclipse Adoptium\\jdk-21.0.12.101-hotspot';
+    let outText = '';
+    try { outText = execFileSync('cmd.exe', ['/c', vera, '--flavour', '2b', '--format', 'text', file], { env: { ...process.env, JAVA_HOME: javaHome, PATH: `${javaHome}\\bin;${process.env.PATH}` }, encoding: 'utf8' }); }
+    catch (e) { outText = String(e.stdout || e.message); }
+    check(`${name}: veraPDF aprova PDF/A-2b`, /^PASS/m.test(outText), outText.trim().slice(0, 200));
+  }
 }
 
 // --- OCR ---

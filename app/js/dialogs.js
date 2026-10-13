@@ -198,6 +198,9 @@ export function propertiesDialog(meta) {
       { name: 'author', label: 'Autor', value: meta.author || '' },
       { name: 'subject', label: 'Assunto', value: meta.subject || '' },
       { name: 'keywords', label: 'Palavras-chave (separadas por vírgula)', value: meta.keywords || '' },
+      { name: 'lang', label: 'Idioma do documento (leitores de tela)', type: 'select', value: meta.lang || '', options: [
+        ['', 'Não definido'], ['pt-BR', 'Português (Brasil)'], ['pt-PT', 'Português (Portugal)'], ['en-US', 'Inglês (EUA)'], ['en-GB', 'Inglês (Reino Unido)'], ['es', 'Espanhol'],
+      ] },
     ],
     ok: 'Aplicar ao salvar',
   });
@@ -257,6 +260,24 @@ export function ocrDialog(total) {
       { name: 'force', label: 'Ler também páginas que já têm texto', type: 'checkbox', value: false },
     ],
     ok: 'Reconhecer',
+  });
+}
+
+export function fieldDialog(type, suggested) {
+  const fields = [{ name: 'name', label: 'Nome do campo', value: suggested }];
+  if (type === 'list') fields.push({ name: 'options', label: 'Opções (uma por linha)', type: 'textarea', value: 'Opção 1\nOpção 2\nOpção 3', rows: 4 });
+  if (type === 'text') fields.push({ name: 'multiline', label: 'Várias linhas', type: 'checkbox', value: false });
+  fields.push({ name: 'required', label: 'Preenchimento obrigatório', type: 'checkbox', value: false });
+  return formDialog({
+    title: { text: 'Novo campo de texto', check: 'Nova caixa de marcar', list: 'Nova lista de opções' }[type],
+    fields,
+    ok: 'Criar',
+    validate: (v) => {
+      if (!v.name.trim()) return 'Dê um nome ao campo.';
+      if (/[.]/.test(v.name)) return 'O nome não pode ter ponto.';
+      if (type === 'list' && !v.options.split('\n').some((o) => o.trim())) return 'Informe pelo menos uma opção.';
+      return null;
+    },
   });
 }
 

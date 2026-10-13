@@ -132,11 +132,13 @@ label.check { color: var(--text); }
 .page .text-hits, .page .form-layer, .page .search-layer { position: absolute; inset: 0; pointer-events: none; }
 .page .page-label { position: absolute; top: -20px; left: 0; font-size: 11px; color: var(--muted); }
 
-body.tool-edittext .page .text-hits { pointer-events: auto; cursor: text; z-index: 5; }
+body.tool-edittext .page .text-hits, body.tool-editpara .page .text-hits { pointer-events: auto; cursor: text; z-index: 5; }
 .text-hit { position: absolute; border-radius: 2px; }
-body.tool-edittext .text-hit:hover { background: rgba(31, 94, 255, .14); outline: 1px solid rgba(31, 94, 255, .55); }
+body.tool-edittext .text-hit:hover, body.tool-editpara .text-hit:hover { background: rgba(31, 94, 255, .14); outline: 1px solid rgba(31, 94, 255, .55); }
 .search-layer { z-index: 4; }
 .search-hit { position: absolute; background: rgba(255, 200, 0, .35); border-radius: 2px; }
+.diff-hit { position: absolute; background: rgba(198, 40, 40, .12); outline: 2px solid rgba(198, 40, 40, .7); border-radius: 2px; }
+.compare-list { max-height: 50vh; overflow: auto; white-space: pre-wrap; font: 12px/1.5 Consolas, ui-monospace, monospace; background: #f6f7f9; border-radius: 8px; padding: 10px; margin: 8px 0 0; user-select: text; }
 .search-hit.current { background: rgba(255, 120, 0, .5); outline: 2px solid #ff7a00; }
 
 .form-layer { z-index: 6; }

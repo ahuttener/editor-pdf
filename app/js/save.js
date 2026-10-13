@@ -123,13 +123,16 @@ export async function buildPdf(state, getFontBytes, sources = new Map()) {
 
   const imageCache = new Map();
   const finalPages = [];
+  const made = { fields: 0 };
   for (const entry of state.pages) {
     const page = await pdfPageFor(entry);
     const rotation = entry.rotation();
-    await drawOverlay({ out, page, entry, viewport: entry.viewport(), rotation, fontFor, imageCache, author: state.meta?.author });
+    await drawOverlay({ out, page, entry, viewport: entry.viewport(), rotation, fontFor, imageCache, author: state.meta?.author, made });
     page.setRotation(degrees(rotation));
     finalPages.push(page);
   }
+
+  if (made.fields) out.getForm().updateFieldAppearances(await fontFor('Arial', false, false));
 
   while (out.getPageCount() > 0) out.removePage(0);
   for (const page of finalPages) out.addPage(page);
@@ -143,17 +146,18 @@ function applyMetadata(out, meta) {
   if (meta.author !== undefined) out.setAuthor(meta.author || '');
   if (meta.subject !== undefined) out.setSubject(meta.subject || '');
   if (meta.keywords !== undefined) out.setKeywords((meta.keywords || '').split(',').map((k) => k.trim()).filter(Boolean));
+  if (meta.lang) out.setLanguage(meta.lang);
   out.setProducer('Editor PDF (CyberSecInfo)');
   out.setModificationDate(new Date());
 }
 
-async function drawOverlay({ out, page, entry, viewport, rotation, fontFor, imageCache, author }) {
+async function drawOverlay({ out, page, entry, viewport, rotation, fontFor, imageCache, author, made }) {
   const objects = (await entry.objects()).filter((o) => o.visible !== false);
   if (!objects.length) return;
   const toPdf = makeToPdf(viewport);
   const pdfAngle = (obj) => degrees(rotation - (obj.getTotalAngle ? obj.getTotalAngle() : obj.angle || 0));
   const isVector = (o) => o instanceof fabric.IText || o instanceof fabric.FabricImage || o instanceof fabric.Rect
-    || o instanceof fabric.Ellipse || o instanceof fabric.Line || o.kind === 'note';
+    || o instanceof fabric.Ellipse || o instanceof fabric.Line || o.kind === 'note' || o.kind === 'field';
 
   // Desenho livre, setas e carimbos viram imagem transparente da página (alta resolução).
   // Objetos seguidos desse tipo vão juntos numa imagem, respeitando a ordem de empilhamento.
@@ -166,6 +170,7 @@ async function drawOverlay({ out, page, entry, viewport, rotation, fontFor, imag
     if (!isVector(obj)) { batch.push(obj); continue; }
     await flush();
     if (obj.kind === 'note') addNoteAnnotation(out, page, obj, toPdf, author);
+    else if (obj.kind === 'field') { createFormField(out, page, obj, viewport); made.fields++; }
     else if (obj instanceof fabric.IText) await drawText(page, obj, toPdf, pdfAngle, fontFor);
     else if (obj instanceof fabric.FabricImage) await drawImage(out, page, obj, toPdf, pdfAngle, imageCache);
     else if (obj instanceof fabric.Rect) drawRect(page, obj, toPdf, pdfAngle);
@@ -259,6 +264,39 @@ async function drawImage(out, page, obj, toPdf, pdfAngle, imageCache) {
     width: obj.width * (obj.scaleX || 1), height: obj.height * (obj.scaleY || 1),
     rotate: pdfAngle(obj), opacity: obj.opacity ?? 1,
   });
+}
+
+// Campo de formulário criado no editor vira campo de verdade do PDF (preenchível em qualquer leitor)
+function createFormField(out, page, obj, viewport) {
+  const f = obj.field || {};
+  const pts = obj.getCoords().map((p) => viewport.convertToPdfPoint(p.x, p.y));
+  const xs = pts.map((p) => p[0]);
+  const ys = pts.map((p) => p[1]);
+  const box = { x: Math.min(...xs), y: Math.min(...ys), width: Math.max(...xs) - Math.min(...xs), height: Math.max(...ys) - Math.min(...ys) };
+  const look = { ...box, borderWidth: 1, borderColor: rgb(0.55, 0.6, 0.7), backgroundColor: rgb(1, 1, 1) };
+  const form = out.getForm();
+  const base = String(f.name || 'campo').trim();
+  let name = base;
+  for (let k = 2; ; k++) {
+    let exists = true;
+    try { form.getField(name); } catch { exists = false; }
+    if (!exists) break;
+    name = `${base}_${k}`;
+  }
+  let field;
+  if (f.type === 'check') {
+    field = form.createCheckBox(name);
+    field.addToPage(page, look);
+  } else if (f.type === 'list') {
+    field = form.createDropdown(name);
+    field.addOptions((f.options || []).filter(Boolean));
+    field.addToPage(page, look);
+  } else {
+    field = form.createTextField(name);
+    if (f.multiline) field.enableMultiline();
+    field.addToPage(page, look);
+  }
+  if (f.required) field.enableRequired();
 }
 
 // Nota = comentário de verdade do PDF (ícone + texto), visível no Acrobat, Edge, Chrome etc.

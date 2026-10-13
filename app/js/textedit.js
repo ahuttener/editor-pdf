@@ -197,14 +197,108 @@ export function createTextEdit(entry, run) {
   return { cover, text };
 }
 
-// Áreas clicáveis por cima das frases (só aparecem com a ferramenta "Editar texto")
-export function renderTextHits(entry, zoom, onPick) {
+// Agrupa as frases (linhas) em parágrafos: mesma fonte/tamanho, alinhadas à esquerda
+// (o recuo da primeira linha é aceito) e com espaçamento de linha regular
+export function groupParagraphs(entry, runs) {
+  const lines = runs.filter((r) => !r.vertical).sort((a, b) => a.baseline - b.baseline || a.left - b.left);
+  const paras = [];
+  for (const line of lines) {
+    const p = paras[paras.length - 1];
+    const last = p?.lines[p.lines.length - 1];
+    const fit = p
+      && Math.abs(line.fontSize - p.fontSize) <= p.fontSize * 0.12
+      && line.generic === p.generic
+      && line.baseline - last.baseline > p.fontSize * 0.8
+      && line.baseline - last.baseline <= p.fontSize * 1.9
+      && (p.lines.length < 2 || Math.abs((line.baseline - last.baseline) - p.gap) <= p.fontSize * 0.25)
+      && Math.abs(line.left - p.left) <= p.fontSize * 2.5
+      && line.left < p.right; // não junta colunas lado a lado
+    if (fit) {
+      if (p.lines.length === 1) p.gap = line.baseline - last.baseline;
+      p.lines.push(line);
+      p.left = Math.min(p.left, line.left);
+      p.right = Math.max(p.right, line.left + line.width);
+    } else {
+      paras.push({ lines: [line], fontSize: line.fontSize, generic: line.generic, left: line.left, right: line.left + line.width, gap: line.fontSize * 1.2 });
+    }
+  }
+  return paras.map((p, i) => {
+    const first = p.lines[0];
+    const last = p.lines[p.lines.length - 1];
+    let text = '';
+    p.lines.forEach((l, k) => {
+      if (k === 0) text = l.str;
+      else if (/[A-Za-zÀ-ú]-$/.test(text)) text = text.slice(0, -1) + l.str; // palavra hifenizada no fim da linha
+      else text += ' ' + l.str;
+    });
+    const para = {
+      key: `${entry.docKey}:${entry.index}:${entry.rotation()}:p${i}`,
+      str: text,
+      left: p.left,
+      width: p.right - p.left,
+      top: first.top,
+      bottom: last.bottom,
+      baseline: first.baseline,
+      fontSize: first.fontSize,
+      fontName: first.fontName,
+      generic: first.generic,
+      gap: p.gap,
+      indent: first.left - p.left,
+      lineKeys: p.lines.map((l) => l.key),
+    };
+    for (const l of p.lines) l.paraKey = para.key;
+    return para;
+  });
+}
+
+// Editar parágrafo: o texto novo se reorganiza (refluxo) dentro da largura original
+export function createParagraphEdit(entry, para) {
+  const { family, bold, italic } = fontDetails(entry, para);
+  const colors = sampleColors(entry, para);
+  const pad = Math.max(1, para.fontSize * 0.08);
+  const uid = newUid();
+  const cover = new fabric.Rect({
+    left: para.left - pad,
+    top: para.top - pad,
+    width: para.width + pad * 2,
+    height: para.bottom - para.top + pad * 2,
+    fill: colors.background,
+    strokeWidth: 0,
+    selectable: false,
+    evented: false,
+    kind: 'cover',
+    uid,
+    runKey: para.key,
+  });
+  const lineHeight = Math.max(0.8, para.gap / (para.fontSize * 1.13));
+  const text = new fabric.Textbox(para.str, {
+    left: para.left,
+    top: para.baseline - para.fontSize * TEXT_BASELINE_RATIO,
+    width: para.width + para.fontSize * 0.5,
+    fontSize: para.fontSize,
+    lineHeight,
+    fontFamily: family,
+    fontWeight: bold ? 'bold' : 'normal',
+    fontStyle: italic ? 'italic' : 'normal',
+    fill: colors.text,
+    splitByGrapheme: false,
+    kind: 'edited',
+    uid: newUid(),
+    link: uid,
+    runKey: para.key,
+  });
+  return { cover, text };
+}
+
+// Áreas clicáveis por cima das frases ou parágrafos ("Editar texto" / "Editar parágrafo")
+export function renderTextHits(entry, zoom, onPick, paragraphs = false) {
   const layer = entry.hitLayer;
   layer.replaceChildren();
   if (!entry.runs) return;
   const used = new Set(entry.plainObjects().map((o) => o.runKey).filter(Boolean));
-  for (const run of entry.runs) {
-    if (used.has(run.key)) continue;
+  const items = paragraphs ? (entry.paras || []) : entry.runs.filter((r) => !r.vertical);
+  for (const run of items) {
+    if (used.has(run.key) || (run.paraKey && used.has(run.paraKey)) || run.lineKeys?.some((k) => used.has(k))) continue;
     const el = document.createElement('div');
     el.className = 'text-hit';
     Object.assign(el.style, {
@@ -213,7 +307,7 @@ export function renderTextHits(entry, zoom, onPick) {
       width: `${(run.width + 2) * zoom}px`,
       height: `${(run.bottom - run.top + 2) * zoom}px`,
     });
-    el.title = t('Clique para editar este texto');
+    el.title = t(paragraphs ? 'Clique para editar este parágrafo' : 'Clique para editar este texto');
     el.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); onPick(entry, run); });
     layer.append(el);
   }

@@ -31,6 +31,11 @@ cidade.addToPage(p1, { x: 190, y: 520, width: 150, height: 20, font: helv });
 const p2 = doc.addPage([595, 842]);
 p2.drawText('Página dois - cláusulas', { x: 72, y: 760, size: 16, font: times });
 p2.drawText('Cláusula 1: prazo de 12 meses.', { x: 72, y: 730, size: 12, font: times });
+['Este contrato é regido pelas leis brasileiras. As partes elegem o foro da',
+  'comarca de São Paulo para dirimir quaisquer dúvidas oriundas deste',
+  'instrumento, renunciando a qualquer outro, por mais privilegiado que seja.'].forEach((line, i) => {
+  p2.drawText(line, { x: 72, y: 600 - i * 14, size: 11, font: times });
+});
 
 await fs.writeFile(path.join(dir, 'contrato.pdf'), await doc.save());
 
