@@ -1,0 +1,8 @@
+node_modules/
+dist/
+test-output/
+test-output-pkg/
+test-fixtures/
+*.log
+*.err
+.impeccable/

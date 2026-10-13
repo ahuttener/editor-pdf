@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self' data: blob:; object-src 'none'; base-uri 'none'">
+  <title>Editor PDF</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="group">
+      <button id="btn-open" class="btn" title="Abrir PDF (Ctrl+O)">Abrir</button>
+      <button id="btn-save" class="btn primary" title="Salvar (Ctrl+S)" disabled>Salvar</button>
+      <button id="btn-saveas" class="btn" title="Salvar como (Ctrl+Shift+S)" disabled>Salvar como</button>
+    </div>
+
+    <div class="group tools" id="tools">
+      <button class="tool active" data-tool="select" title="Selecionar e mover (Esc)">Selecionar</button>
+      <button class="tool" data-tool="edittext" title="Clique numa frase do PDF para alterar o texto">Editar texto</button>
+      <button class="tool" data-tool="text" title="Clique na página para escrever">Texto</button>
+      <button class="tool" data-tool="image" title="Inserir imagem">Imagem</button>
+      <button class="tool" data-tool="signature" title="Desenhar e inserir assinatura">Assinatura</button>
+      <button class="tool" data-tool="whiteout" title="Arraste para cobrir uma área com branco">Cobrir</button>
+      <button class="tool" data-tool="highlight" title="Arraste para destacar">Destacar</button>
+      <button class="tool" data-tool="rect" title="Arraste para desenhar um retângulo">Retângulo</button>
+      <button class="tool" data-tool="pen" title="Desenho livre">Desenhar</button>
+    </div>
+
+    <div class="group">
+      <button id="btn-undo" class="btn icon" title="Desfazer (Ctrl+Z)" disabled>↶</button>
+      <button id="btn-redo" class="btn icon" title="Refazer (Ctrl+Y)" disabled>↷</button>
+    </div>
+
+    <div class="group zoom">
+      <button id="btn-zoom-out" class="btn icon" title="Diminuir zoom (Ctrl -)">−</button>
+      <span id="zoom-label">100%</span>
+      <button id="btn-zoom-in" class="btn icon" title="Aumentar zoom (Ctrl +)">+</button>
+    </div>
+  </header>
+
+  <div class="propbar" id="propbar">
+    <label>Fonte
+      <select id="prop-font"></select>
+    </label>
+    <label>Tamanho
+      <input id="prop-size" type="number" min="4" max="200" step="1" value="14">
+    </label>
+    <label>Cor
+      <input id="prop-color" type="color" value="#000000">
+    </label>
+    <button id="prop-bold" class="btn toggle" title="Negrito"><b>N</b></button>
+    <button id="prop-italic" class="btn toggle" title="Itálico"><i>I</i></button>
+    <span class="sep"></span>
+    <label>Traço
+      <input id="prop-stroke" type="number" min="1" max="40" step="1" value="2">
+    </label>
+    <label>Cor do traço
+      <input id="prop-stroke-color" type="color" value="#d32f2f">
+    </label>
+    <span class="sep"></span>
+    <button id="prop-delete" class="btn danger" disabled title="Excluir selecionado (Delete)">Excluir</button>
+    <span class="hint" id="hint"></span>
+  </div>
+
+  <main class="workspace">
+    <aside class="sidebar">
+      <div class="sidebar-head">
+        <span>Páginas</span>
+        <button id="btn-insert" class="btn small" disabled title="Inserir páginas de outro PDF no final">+ Inserir PDF</button>
+      </div>
+      <ol id="thumbs" class="thumbs"></ol>
+    </aside>
+
+    <section id="viewer" class="viewer">
+      <div id="empty" class="empty">
+        <div class="empty-card">
+          <h1>Editor PDF</h1>
+          <p>Abra um PDF para editar o texto, escrever por cima, assinar, organizar páginas e preencher formulários.</p>
+          <button id="btn-open-empty" class="btn primary big">Abrir PDF</button>
+          <p class="muted">ou arraste um arquivo .pdf para esta janela</p>
+        </div>
+      </div>
+      <div id="pages" class="pages"></div>
+    </section>
+  </main>
+
+  <div id="sig-modal" class="modal" hidden>
+    <div class="modal-card">
+      <h2>Assinatura</h2>
+      <p class="muted">Assine com o mouse ou com o dedo dentro do quadro.</p>
+      <canvas id="sig-canvas" width="640" height="220"></canvas>
+      <div class="modal-actions">
+        <label>Cor <input id="sig-color" type="color" value="#0d47a1"></label>
+        <button id="sig-clear" class="btn">Limpar</button>
+        <span class="spacer"></span>
+        <button id="sig-cancel" class="btn">Cancelar</button>
+        <button id="sig-ok" class="btn primary">Inserir</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="busy" class="busy" hidden><div class="busy-card" id="busy-text">Processando…</div></div>
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="../node_modules/pdf-lib/dist/pdf-lib.min.js"></script>
+  <script src="../node_modules/@pdf-lib/fontkit/dist/fontkit.umd.min.js"></script>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

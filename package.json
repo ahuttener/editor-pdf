@@ -1,0 +1,74 @@
+{
+  "name": "editorpdf",
+  "productName": "Editor PDF",
+  "version": "1.0.0",
+  "description": "Editor de PDF para Windows: editar texto existente, adicionar texto, imagem e assinatura, organizar páginas e preencher formulários.",
+  "author": "Adriano",
+  "license": "UNLICENSED",
+  "private": true,
+  "main": "main.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "electron .",
+    "fixtures": "node scripts/make-fixtures.mjs",
+    "selftest": "node scripts/make-fixtures.mjs && electron . --selftest=test-output && node scripts/verify.mjs test-output",
+    "dist": "electron-builder --win nsis"
+  },
+  "dependencies": {
+    "@pdf-lib/fontkit": "^1.1.1",
+    "fabric": "^7.4.0",
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^6.4.299"
+  },
+  "devDependencies": {
+    "electron": "^44.7.1",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "com.adriano.editorpdf",
+    "productName": "Editor PDF",
+    "files": [
+      "main.js",
+      "preload.js",
+      "app/**/*",
+      "build/icon.png",
+      "!**/node_modules/**/*",
+      "node_modules/pdfjs-dist/build/pdf.min.mjs",
+      "node_modules/pdfjs-dist/build/pdf.worker.min.mjs",
+      "node_modules/pdfjs-dist/cmaps/**/*",
+      "node_modules/pdfjs-dist/standard_fonts/**/*",
+      "node_modules/pdfjs-dist/wasm/**/*",
+      "node_modules/pdfjs-dist/iccs/**/*",
+      "node_modules/pdfjs-dist/LICENSE",
+      "node_modules/pdfjs-dist/package.json",
+      "node_modules/fabric/dist/index.min.mjs",
+      "node_modules/fabric/package.json",
+      "node_modules/fabric/LICENSE",
+      "node_modules/pdf-lib/dist/pdf-lib.min.js",
+      "node_modules/pdf-lib/package.json",
+      "node_modules/pdf-lib/LICENSE.md",
+      "node_modules/@pdf-lib/fontkit/dist/fontkit.umd.min.js",
+      "node_modules/@pdf-lib/fontkit/package.json",
+      "node_modules/@pdf-lib/fontkit/LICENSE"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "Editor PDF"
+    },
+    "fileAssociations": [
+      {
+        "ext": "pdf",
+        "name": "Documento PDF",
+        "description": "Documento PDF",
+        "role": "Editor"
+      }
+    ]
+  }
+}
