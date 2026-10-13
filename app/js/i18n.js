@@ -1,0 +1,432 @@
+// Idiomas: português (padrão do texto no código) e inglês.
+// t('texto em português', { variáveis }) devolve a versão no idioma escolhido.
+// O idioma vem do que o usuário escolheu ou, na primeira vez, do idioma do sistema.
+
+const STORE_KEY = 'editorpdf.idioma';
+
+const EN = {
+  // ---------- barra superior e abas ----------
+  'Abrir': 'Open',
+  'Abrir PDF ou imagens (Ctrl+O)': 'Open PDF or images (Ctrl+O)',
+  'Salvar': 'Save',
+  'Salvar (Ctrl+S)': 'Save (Ctrl+S)',
+  'Salvar como': 'Save as',
+  'Salvar como (Ctrl+Shift+S)': 'Save as (Ctrl+Shift+S)',
+  'Imprimir': 'Print',
+  'Imprimir (Ctrl+P)': 'Print (Ctrl+P)',
+  'Editar': 'Edit',
+  'Comentar': 'Comment',
+  'Páginas': 'Pages',
+  'Documento': 'Document',
+  'Converter': 'Convert',
+  'Proteger': 'Protect',
+  'Desfazer (Ctrl+Z)': 'Undo (Ctrl+Z)',
+  'Refazer (Ctrl+Y)': 'Redo (Ctrl+Y)',
+  'Procurar no documento (Ctrl+F)': 'Find in document (Ctrl+F)',
+  'Diminuir zoom (Ctrl -)': 'Zoom out (Ctrl -)',
+  'Aumentar zoom (Ctrl +)': 'Zoom in (Ctrl +)',
+  'Ajustar à largura': 'Fit width',
+  'Sobre': 'About',
+  'Idioma': 'Language',
+
+  // ---------- aba Editar ----------
+  'Selecionar': 'Select',
+  'Selecionar e mover (Esc)': 'Select and move (Esc)',
+  'Editar texto': 'Edit text',
+  'Clique numa frase do PDF para alterar o texto': 'Click a sentence in the PDF to change its text',
+  'Texto': 'Text',
+  'Clique na página para escrever': 'Click the page to type',
+  'Imagem': 'Image',
+  'Inserir imagem ou logo (PNG, JPG, WEBP, GIF, BMP, SVG)': 'Insert image or logo (PNG, JPG, WEBP, GIF, BMP, SVG)',
+  'Assinatura': 'Signature',
+  'Assinar: desenhar, digitar ou usar imagem': 'Sign: draw, type or use an image',
+  'Cobrir': 'White-out',
+  'Arraste para cobrir e apagar o que está embaixo': 'Drag to cover and erase what is underneath',
+  'Retângulo': 'Rectangle',
+  'Elipse': 'Ellipse',
+  'Linha': 'Line',
+  'Seta': 'Arrow',
+  'Desenhar': 'Draw',
+  'Desenho livre': 'Freehand drawing',
+
+  // ---------- aba Comentar ----------
+  'Nota': 'Note',
+  'Clique para colocar uma nota (vira comentário no PDF)': 'Click to place a note (becomes a PDF comment)',
+  'Destacar': 'Highlight',
+  'Arraste sobre o trecho para destacar': 'Drag over the text to highlight',
+  'Sublinhar': 'Underline',
+  'Arraste sobre o trecho para sublinhar': 'Drag over the text to underline',
+  'Riscar': 'Strike out',
+  'Arraste sobre o trecho para riscar': 'Drag over the text to strike it out',
+  'Carimbo': 'Stamp',
+  'Escolha um carimbo e clique na página': 'Choose a stamp and click the page',
+  'Escolher…': 'Choose…',
+  'Aprovado': 'Approved',
+  'Reprovado': 'Rejected',
+  'Pago': 'Paid',
+  'Recebido': 'Received',
+  'Confidencial': 'Confidential',
+  'Rascunho': 'Draft',
+  'Cópia': 'Copy',
+  'Data de hoje': "Today's date",
+  'Meu logo…': 'My logo…',
+
+  // ---------- aba Páginas ----------
+  'Inserir arquivo': 'Insert file',
+  'Inserir páginas de outro PDF ou de imagens no final': 'Insert pages from another PDF or images at the end',
+  'Página em branco': 'Blank page',
+  'Página em branco depois da atual': 'Blank page after the current one',
+  'Duplicar': 'Duplicate',
+  'Duplicar as páginas selecionadas': 'Duplicate selected pages',
+  '⟲ Girar': '⟲ Rotate',
+  'Girar ⟳': 'Rotate ⟳',
+  'Girar selecionadas para a esquerda': 'Rotate selected pages left',
+  'Girar selecionadas para a direita': 'Rotate selected pages right',
+  'Excluir': 'Delete',
+  'Excluir as páginas selecionadas': 'Delete selected pages',
+  'Extrair': 'Extract',
+  'Salvar as páginas selecionadas como novo PDF': 'Save selected pages as a new PDF',
+  'Dividir': 'Split',
+  'Dividir em vários PDFs': 'Split into several PDFs',
+  'Ctrl+clique ou Shift+clique nas miniaturas para selecionar várias': 'Ctrl+click or Shift+click thumbnails to select several',
+
+  // ---------- aba Documento ----------
+  "Marca d'água": 'Watermark',
+  "Marca d'água em todas as páginas": 'Watermark on every page',
+  'Cabeçalho e rodapé': 'Header & footer',
+  'Cabeçalho, rodapé e numeração de páginas': 'Header, footer and page numbers',
+  'Numerar páginas': 'Page numbers',
+  'Numerar as páginas': 'Number the pages',
+  'OCR (reconhecer texto)': 'OCR (recognize text)',
+  'Reconhecer texto de PDF escaneado (português e inglês)': 'Recognize text in scanned PDFs (Portuguese and English)',
+  'Comprimir': 'Compress',
+  'Diminuir o tamanho do arquivo': 'Reduce file size',
+  'Propriedades': 'Properties',
+  'Título, autor, assunto, palavras-chave': 'Title, author, subject, keywords',
+
+  // ---------- aba Converter ----------
+  'PDF → Word': 'PDF → Word',
+  'Converter para Word (.docx)': 'Convert to Word (.docx)',
+  'PDF → Imagens': 'PDF → Images',
+  'Salvar cada página como imagem': 'Save each page as an image',
+  'PDF → Texto': 'PDF → Text',
+  'Salvar o texto (.txt)': 'Save the text (.txt)',
+  'Imagens → PDF': 'Images → PDF',
+  'Criar um PDF a partir de imagens': 'Create a PDF from images',
+
+  // ---------- aba Proteger ----------
+  'Tarjar (ocultar dados)': 'Redact (hide data)',
+  'Arraste para tarjar: remove de verdade texto e imagens embaixo': 'Drag to redact: really removes text and images underneath',
+  'Senha e permissões': 'Password & permissions',
+  'Exigir senha para abrir e definir permissões': 'Require a password to open and set permissions',
+  'Remover senha': 'Remove password',
+  'Salvar sem senha': 'Save without password',
+  'Remover metadados ao salvar': 'Remove metadata when saving',
+
+  // ---------- barra de propriedades ----------
+  'Fonte': 'Font',
+  'Tamanho': 'Size',
+  'Cor': 'Color',
+  'Negrito': 'Bold',
+  'Itálico': 'Italic',
+  'Sublinhado': 'Underline',
+  'N': 'B',
+  'S': 'U',
+  'Alinhamento': 'Alignment',
+  'Esquerda': 'Left',
+  'Centro': 'Center',
+  'Direita': 'Right',
+  'Traço': 'Stroke',
+  'Cor do traço': 'Stroke color',
+  'Opacidade': 'Opacity',
+  'Frente': 'Front',
+  'Trazer para frente': 'Bring to front',
+  'Trás': 'Back',
+  'Enviar para trás': 'Send to back',
+  'Duplicar (Ctrl+D)': 'Duplicate (Ctrl+D)',
+  'Excluir selecionado (Delete)': 'Delete selected (Delete)',
+
+  // ---------- barra lateral, busca, tela inicial ----------
+  'Marcadores': 'Bookmarks',
+  'Comentários': 'Comments',
+  'Procurar no documento': 'Find in document',
+  'Anterior (Shift+Enter)': 'Previous (Shift+Enter)',
+  'Próximo (Enter)': 'Next (Enter)',
+  'Fechar (Esc)': 'Close (Esc)',
+  'Edite o texto do PDF, assine, comente, organize páginas, converta, comprima, proteja com senha e reconheça texto de documentos escaneados.':
+    'Edit PDF text, sign, comment, organize pages, convert, compress, password-protect and recognize text in scanned documents.',
+  'Abrir PDF ou imagens': 'Open PDF or images',
+  'ou arraste arquivos para esta janela': 'or drag files into this window',
+  'Abertos recentemente': 'Recently opened',
+  'limpar': 'clear',
+  'Processando…': 'Working…',
+  'Página {n}': 'Page {n}',
+  'Nenhum comentário. Use Comentar → Nota.': 'No comments. Use Comment → Note.',
+  'Este PDF não tem marcadores.': 'This PDF has no bookmarks.',
+  '(sem título)': '(untitled)',
+  '{n} resultado(s)': '{n} result(s)',
+  'Nada encontrado': 'Nothing found',
+  '{i} de {n}': '{i} of {n}',
+  'Girar para a esquerda': 'Rotate left',
+  'Girar para a direita': 'Rotate right',
+  'Excluir página': 'Delete page',
+  'Clique para editar este texto': 'Click to edit this text',
+
+  // ---------- assinatura ----------
+  'Digitar': 'Type',
+  'Salvas': 'Saved',
+  'Limpar': 'Clear',
+  'Digite seu nome': 'Type your name',
+  'Estilo': 'Style',
+  'Cursiva': 'Cursive',
+  'As assinaturas ficam guardadas só neste computador.': 'Signatures are stored only on this computer.',
+  'Guardar para usar depois': 'Keep for later',
+  'Cancelar': 'Cancel',
+  'Inserir': 'Insert',
+  'Nenhuma assinatura guardada ainda.': 'No saved signatures yet.',
+  'Apagar': 'Delete',
+  'Assinatura salva': 'Saved signature',
+
+  // ---------- dicas das ferramentas ----------
+  'Clique num item para mover, redimensionar ou excluir. Clique duas vezes num texto para editar.': 'Click an item to move, resize or delete it. Double-click text to edit it.',
+  'Passe o mouse sobre o PDF e clique na frase que quer alterar.': 'Hover over the PDF and click the sentence you want to change.',
+  'Clique na página onde quer escrever.': 'Click where you want to type.',
+  'Arraste sobre a área: o que estiver embaixo é apagado do PDF ao salvar.': 'Drag over the area: whatever is underneath is erased from the PDF when you save.',
+  'Arraste para tarjar: texto e imagens embaixo são removidos de verdade ao salvar.': 'Drag to redact: text and images underneath are really removed when you save.',
+  'Arraste sobre o trecho que quer destacar.': 'Drag over the text you want to highlight.',
+  'Arraste sobre o trecho que quer sublinhar.': 'Drag over the text you want to underline.',
+  'Arraste sobre o trecho que quer riscar.': 'Drag over the text you want to strike out.',
+  'Arraste para desenhar o retângulo.': 'Drag to draw the rectangle.',
+  'Arraste para desenhar a elipse.': 'Drag to draw the ellipse.',
+  'Arraste para desenhar a linha.': 'Drag to draw the line.',
+  'Arraste do início para a ponta da seta.': 'Drag from the start to the tip of the arrow.',
+  'Desenhe com o mouse. Esc para voltar.': 'Draw with the mouse. Esc to go back.',
+  'Clique onde quer deixar o comentário.': 'Click where you want to leave the comment.',
+  'Clique na página onde quer colocar o carimbo.': 'Click the page where you want the stamp.',
+
+  // ---------- avisos ----------
+  'Abra um PDF primeiro.': 'Open a PDF first.',
+  'O documento precisa ter pelo menos uma página.': 'The document needs at least one page.',
+  '{n} páginas excluídas.': '{n} pages deleted.',
+  'Página excluída.': 'Page deleted.',
+  'Abrindo…': 'Opening…',
+  'Abertura cancelada.': 'Opening cancelled.',
+  'Não consegui abrir: {erro}': 'Could not open: {erro}',
+  'Inserindo páginas…': 'Inserting pages…',
+  '{n} página(s) inserida(s).': '{n} page(s) inserted.',
+  'Não consegui inserir: {erro}': 'Could not insert: {erro}',
+  'Este PDF: {itens}.': 'This PDF: {itens}.',
+  '{n} campo(s) de formulário para preencher': '{n} form field(s) to fill in',
+  'a senha será mantida ao salvar': 'the password will be kept when saving',
+  'Apagando o conteúdo coberto…': 'Erasing covered content…',
+  'Montando o PDF…': 'Building the PDF…',
+  'Aplicando a senha…': 'Applying the password…',
+  'Limpando metadados…': 'Removing metadata…',
+  'Salvando…': 'Saving…',
+  'Salvo: {nome} ({tamanho})': 'Saved: {nome} ({tamanho})',
+  'Mostrar na pasta': 'Show in folder',
+  'Não consegui salvar: {erro}': 'Could not save: {erro}',
+  'Solte arquivos PDF ou imagens.': 'Drop PDF files or images.',
+  'Arquivos soltos': 'Dropped files',
+  'Inserir esses arquivos no final do documento atual?': 'Insert these files at the end of the current document?',
+  'Inserir esse arquivo no final do documento atual?': 'Insert this file at the end of the current document?',
+  'Inserir no final': 'Insert at the end',
+  'Abrir como novo': 'Open as new',
+  'Alterações não salvas': 'Unsaved changes',
+  'Abrir outro arquivo e descartar as alterações atuais?': 'Open another file and discard the current changes?',
+  'Descartar e abrir': 'Discard and open',
+  '"{nome}" é protegido por senha. Digite a senha para abrir.': '"{nome}" is password-protected. Enter the password to open it.',
+  '"{nome}" tem restrições de edição. Digite a senha do proprietário para poder editar.': '"{nome}" has editing restrictions. Enter the owner password to edit it.',
+  'Essa senha abre o PDF, mas ele tem restrições de edição. Digite a senha do proprietário.': 'This password opens the PDF, but it has editing restrictions. Enter the owner password.',
+  'Senha incorreta. Tente de novo.': 'Wrong password. Try again.',
+  'Senha ativa{extra} — será aplicada ao salvar.': 'Password on{extra} — it will be applied when saving.',
+  ' com restrições': ' with restrictions',
+  'Não deu certo: {erro}': 'Something went wrong: {erro}',
+  "Marca d'água removida.": 'Watermark removed.',
+  "Marca d'água aplicada em todas as páginas.": 'Watermark applied to every page.',
+  'Cabeçalho e rodapé removidos.': 'Header and footer removed.',
+  'Cabeçalho e rodapé aplicados.': 'Header and footer applied.',
+  'Propriedades serão gravadas ao salvar.': 'Properties will be written when saving.',
+  'Preparando…': 'Preparing…',
+  'Comprimindo…': 'Compressing…',
+  'Salvar PDF comprimido': 'Save compressed PDF',
+  'já estava otimizado': 'already optimized',
+  'Reconhecendo texto…': 'Recognizing text…',
+  'Texto reconhecido em {n} página(s) ({p} palavras). Agora dá para buscar, copiar e usar "Editar texto".': 'Text recognized on {n} page(s) ({p} words). You can now search, copy and use "Edit text".',
+  'As páginas já tinham texto. Marque "Ler também páginas que já têm texto" para forçar.': 'The pages already had text. Tick "Also read pages that already have text" to force it.',
+  'Extraindo páginas…': 'Extracting pages…',
+  'página {n}': 'page {n}',
+  'páginas {lista}': 'pages {lista}',
+  'Salvar páginas extraídas': 'Save extracted pages',
+  '{n} página(s) salvas em {nome}.': '{n} page(s) saved to {nome}.',
+  'Nenhum intervalo válido.': 'No valid range.',
+  'Escolha a pasta para os PDFs divididos': 'Choose the folder for the split PDFs',
+  'Dividindo…': 'Splitting…',
+  '{base} (parte {i} - pág {faixa}).pdf': '{base} (part {i} - p {faixa}).pdf',
+  '{n} arquivo(s) criados.': '{n} file(s) created.',
+  'Convertendo para Word…': 'Converting to Word…',
+  'Documento do Word': 'Word document',
+  'Salvar como Word': 'Save as Word',
+  'Word salvo: {nome}': 'Word saved: {nome}',
+  'Escolha a pasta para as imagens': 'Choose the folder for the images',
+  'Gerando imagens…': 'Creating images…',
+  '{base} - página {n}.{ext}': '{base} - page {n}.{ext}',
+  '{n} imagem(ns) salvas.': '{n} image(s) saved.',
+  'Extraindo texto…': 'Extracting text…',
+  '--- Página {n} ---': '--- Page {n} ---',
+  'Salvar texto': 'Save text',
+  'Texto salvo: {nome}': 'Text saved: {nome}',
+  'Adicionar as imagens como páginas no final do documento aberto?': 'Add the images as pages at the end of the open document?',
+  'Adicionar ao documento': 'Add to document',
+  'Criar PDF novo': 'Create new PDF',
+  'Preparando a impressão…': 'Preparing to print…',
+  'A senha será aplicada quando você salvar.': 'The password will be applied when you save.',
+  'Este documento não tem senha.': 'This document has no password.',
+  'O PDF será salvo sem senha e sem restrições. Continuar?': 'The PDF will be saved without a password or restrictions. Continue?',
+  'Remover': 'Remove',
+  'Ao salvar, o PDF ficará sem senha.': 'When saved, the PDF will have no password.',
+  'Excluir páginas': 'Delete pages',
+  'Excluir {n} páginas?': 'Delete {n} pages?',
+  'Comentário': 'Comment',
+  'RECEBIDO EM {data}': 'RECEIVED ON {data}',
+  'Idioma alterado para português.': 'Idioma alterado para português.',
+  'Aguarde a operação atual terminar.': 'Please wait for the current operation to finish.',
+  'Finalizando…': 'Finishing…',
+  'A senha deste PDF tem vírgula e não pode ser reaplicada: ele será salvo sem senha. Defina uma nova em Proteger → Senha e permissões.':
+    "This PDF's password contains a comma and can't be reapplied: it will be saved without a password. Set a new one in Protect → Password & permissions.",
+  'Você abriu com a senha do proprietário: ao salvar, ela passa a ser a senha para abrir. Para mudar, use Proteger → Senha e permissões.':
+    'You opened it with the owner password: when saved, it becomes the password to open. To change it, use Protect → Password & permissions.',
+  'Lendo página {n} ({i} de {total})…': 'Reading page {n} ({i} of {total})…',
+  'Gravando o texto reconhecido…': 'Writing the recognized text…',
+  'Convertendo página {n} de {total}…': 'Converting page {n} of {total}…',
+  'A senha não pode ter vírgula. Defina outra em Proteger → Senha e permissões.': 'The password cannot contain a comma. Set another one in Protect → Password & permissions.',
+  'Language changed to English.': 'Language changed to English.',
+
+  // ---------- diálogos ----------
+  'OK': 'OK',
+  'Continuar': 'Continue',
+  'Fechar': 'Close',
+  'PDF protegido': 'Protected PDF',
+  'Senha': 'Password',
+  'O PDF salvo vai pedir a senha para abrir (criptografia AES-256).': 'The saved PDF will ask for the password to open (AES-256 encryption).',
+  'Senha para abrir': 'Password to open',
+  'Repita a senha': 'Repeat the password',
+  'Restrições (opcional) — valem para quem abrir com a senha acima:': 'Restrictions (optional) — for whoever opens it with the password above:',
+  'Impedir impressão': 'Prevent printing',
+  'Impedir copiar texto e imagens': 'Prevent copying text and images',
+  'Impedir edição': 'Prevent editing',
+  'Senha do proprietário (libera as restrições)': 'Owner password (lifts the restrictions)',
+  'Aplicar ao salvar': 'Apply when saving',
+  'Digite a senha.': 'Enter the password.',
+  'As senhas não conferem.': "The passwords don't match.",
+  'A senha não pode ter vírgula.': 'The password cannot contain a comma.',
+  'Para usar restrições, defina a senha do proprietário.': 'To use restrictions, set the owner password.',
+  'A senha do proprietário precisa ser diferente.': 'The owner password must be different.',
+  'Ângulo': 'Angle',
+  'Opacidade (%)': 'Opacity (%)',
+  'Usar o meu logo em vez do texto': 'Use my logo instead of text',
+  "Remover a marca d'água existente": 'Remove the existing watermark',
+  'Aplicar em todas as páginas': 'Apply to every page',
+  'Use {n} para o número da página, {total} para o total, {data} para a data e {arquivo} para o nome do arquivo.':
+    'Use {n} for the page number, {total} for the total, {data} for the date and {arquivo} for the file name.',
+  'Cabeçalho — esquerda': 'Header — left',
+  'Rodapé — esquerda': 'Footer — left',
+  'Margem (pt)': 'Margin (pt)',
+  'Começar a numeração em': 'Start numbering at',
+  'Não colocar na primeira página': 'Skip the first page',
+  'Remover cabeçalho e rodapé existentes': 'Remove existing header and footer',
+  'Aplicar': 'Apply',
+  'Página {n} de {total}': 'Page {n} of {total}',
+  'Propriedades do documento': 'Document properties',
+  'Título': 'Title',
+  'Autor': 'Author',
+  'Assunto': 'Subject',
+  'Palavras-chave (separadas por vírgula)': 'Keywords (comma-separated)',
+  'Comprimir PDF': 'Compress PDF',
+  'Tamanho atual: {tamanho}. O resultado é salvo como um novo arquivo.': 'Current size: {tamanho}. The result is saved as a new file.',
+  'Nível': 'Level',
+  'Leve — melhor qualidade das imagens': 'Light — best image quality',
+  'Recomendado — equilíbrio': 'Recommended — balanced',
+  'Forte — menor arquivo': 'Strong — smallest file',
+  'Comprimir e salvar': 'Compress and save',
+  'Dividir PDF': 'Split PDF',
+  'Como dividir': 'How to split',
+  'A cada N páginas': 'Every N pages',
+  'Por intervalos (ex.: 1-3, 4, 5-8)': 'By ranges (e.g. 1-3, 4, 5-8)',
+  'Uma página por arquivo': 'One page per file',
+  'N (páginas por arquivo)': 'N (pages per file)',
+  'Intervalos': 'Ranges',
+  'Dividir e salvar': 'Split and save',
+  'Formato': 'Format',
+  'Qualidade (DPI)': 'Quality (DPI)',
+  '96 (tela)': '96 (screen)',
+  '150 (padrão)': '150 (default)',
+  '300 (impressão)': '300 (print)',
+  'Todas': 'All',
+  'Só as selecionadas': 'Selected only',
+  'Todas ({n})': 'All ({n})',
+  'Escolher pasta e salvar': 'Choose folder and save',
+  'OCR — reconhecer texto': 'OCR — recognize text',
+  'Lê o texto de páginas escaneadas (português e inglês) e o grava de forma invisível: o PDF fica pesquisável, copiável e editável com "Editar texto". Tudo é feito no seu computador.':
+    'Reads the text of scanned pages (Portuguese and English) and stores it invisibly: the PDF becomes searchable, copyable and editable with "Edit text". Everything runs on your computer.',
+  'Ler também páginas que já têm texto': 'Also read pages that already have text',
+  'Reconhecer': 'Recognize',
+  'por CyberSecInfo — Information Security': 'by CyberSecInfo — Information Security',
+  'Usa componentes de código aberto: pdf.js (Apache-2.0), fabric.js (MIT), pdf-lib (MIT), MuPDF (AGPL-3.0), Tesseract (Apache-2.0), docx (MIT), Electron (MIT).':
+    'Uses open-source components: pdf.js (Apache-2.0), fabric.js (MIT), pdf-lib (MIT), MuPDF (AGPL-3.0), Tesseract (Apache-2.0), docx (MIT), Electron (MIT).',
+  'Imagens.pdf': 'Images.pdf',
+};
+
+function detect() {
+  try {
+    const saved = localStorage.getItem(STORE_KEY);
+    if (saved === 'pt' || saved === 'en') return saved;
+  } catch { /* sem armazenamento */ }
+  return /^pt\b/i.test(navigator.language || '') ? 'pt' : 'en';
+}
+
+let lang = detect();
+export const getLang = () => lang;
+
+export function t(text, vars) {
+  let out = lang === 'en' && Object.prototype.hasOwnProperty.call(EN, text) ? EN[text] : text;
+  if (vars) for (const [k, v] of Object.entries(vars)) out = out.replaceAll(`{${k}}`, String(v));
+  return out;
+}
+
+// Traduz o HTML fixo da página, guardando o texto original para poder trocar de idioma depois
+const originals = new WeakMap();
+const ATTRS = ['title', 'placeholder', 'alt', 'aria-label'];
+
+export function translateDom(root = document.body) {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    if (node.parentElement?.closest('script, style, [data-no-i18n]')) continue;
+    if (!originals.has(node)) {
+      const raw = node.nodeValue;
+      if (!raw.trim()) continue;
+      originals.set(node, raw);
+    }
+    const raw = originals.get(node);
+    const trimmed = raw.trim();
+    node.nodeValue = raw.replace(trimmed, t(trimmed));
+  }
+  for (const el of root.querySelectorAll(ATTRS.map((a) => `[${a}]`).join(','))) {
+    let saved = originals.get(el);
+    if (!saved) { saved = {}; for (const a of ATTRS) if (el.hasAttribute(a)) saved[a] = el.getAttribute(a); originals.set(el, saved); }
+    for (const [a, v] of Object.entries(saved)) el.setAttribute(a, t(v));
+  }
+  document.documentElement.lang = lang === 'pt' ? 'pt-BR' : 'en';
+}
+
+export function setLang(next) {
+  lang = next === 'en' ? 'en' : 'pt';
+  try { localStorage.setItem(STORE_KEY, lang); } catch { /* sem armazenamento */ }
+  translateDom();
+  const select = document.getElementById('lang-select');
+  if (select) select.value = lang;
+  window.api?.setLang?.(lang);
+}
+
+export const DICTIONARY = EN;
+export const missingTranslations = (list) => list.filter((s) => !Object.prototype.hasOwnProperty.call(EN, s));

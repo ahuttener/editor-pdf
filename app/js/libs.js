@@ -22,7 +22,7 @@ export function loadPdfjsDocument(bytes) {
 }
 
 // Propriedades nossas que precisam sobreviver ao desfazer/refazer (toObject/loadFromJSON)
-fabric.FabricObject.customProperties = ['kind', 'uid', 'link', 'runKey'];
+fabric.FabricObject.customProperties = ['kind', 'uid', 'link', 'runKey', 'tpl'];
 // O fabric 7 usa o centro como origem por padrão; o editor trabalha com canto superior esquerdo
 fabric.FabricObject.ownDefaults.originX = 'left';
 fabric.FabricObject.ownDefaults.originY = 'top';

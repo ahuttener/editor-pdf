@@ -10,38 +10,114 @@
 <body>
   <header class="topbar">
     <div class="group">
-      <button id="btn-open" class="btn" title="Abrir PDF (Ctrl+O)">Abrir</button>
+      <button id="btn-open" class="btn" title="Abrir PDF ou imagens (Ctrl+O)">Abrir</button>
       <button id="btn-save" class="btn primary" title="Salvar (Ctrl+S)" disabled>Salvar</button>
       <button id="btn-saveas" class="btn" title="Salvar como (Ctrl+Shift+S)" disabled>Salvar como</button>
+      <button id="btn-print" class="btn" title="Imprimir (Ctrl+P)" disabled>Imprimir</button>
     </div>
 
-    <div class="group tools" id="tools">
-      <button class="tool active" data-tool="select" title="Selecionar e mover (Esc)">Selecionar</button>
-      <button class="tool" data-tool="edittext" title="Clique numa frase do PDF para alterar o texto">Editar texto</button>
-      <button class="tool" data-tool="text" title="Clique na página para escrever">Texto</button>
-      <button class="tool" data-tool="image" title="Inserir imagem">Imagem</button>
-      <button class="tool" data-tool="signature" title="Desenhar e inserir assinatura">Assinatura</button>
-      <button class="tool" data-tool="whiteout" title="Arraste para cobrir uma área com branco">Cobrir</button>
-      <button class="tool" data-tool="highlight" title="Arraste para destacar">Destacar</button>
-      <button class="tool" data-tool="rect" title="Arraste para desenhar um retângulo">Retângulo</button>
-      <button class="tool" data-tool="pen" title="Desenho livre">Desenhar</button>
-    </div>
+    <nav class="tabs" id="tabs" role="tablist">
+      <button class="tab active" data-tab="edit" role="tab">Editar</button>
+      <button class="tab" data-tab="comment" role="tab">Comentar</button>
+      <button class="tab" data-tab="pages" role="tab">Páginas</button>
+      <button class="tab" data-tab="document" role="tab">Documento</button>
+      <button class="tab" data-tab="convert" role="tab">Converter</button>
+      <button class="tab" data-tab="protect" role="tab">Proteger</button>
+    </nav>
 
-    <div class="group">
+    <div class="group right">
       <button id="btn-undo" class="btn icon" title="Desfazer (Ctrl+Z)" disabled>↶</button>
       <button id="btn-redo" class="btn icon" title="Refazer (Ctrl+Y)" disabled>↷</button>
-    </div>
-
-    <div class="group zoom">
+      <button id="btn-search" class="btn icon" title="Procurar no documento (Ctrl+F)" disabled>⌕</button>
+      <span class="sep"></span>
       <button id="btn-zoom-out" class="btn icon" title="Diminuir zoom (Ctrl -)">−</button>
-      <span id="zoom-label">100%</span>
+      <button id="zoom-label" class="btn zoomlabel" title="Ajustar à largura">100%</button>
       <button id="btn-zoom-in" class="btn icon" title="Aumentar zoom (Ctrl +)">+</button>
+      <select id="lang-select" class="lang-select" title="Idioma" data-no-i18n>
+        <option value="pt">Português</option>
+        <option value="en">English</option>
+      </select>
+      <button id="btn-about" class="btn icon" title="Sobre">?</button>
     </div>
   </header>
 
+  <div class="ribbon" id="ribbon">
+    <div class="panel active" data-panel="edit">
+      <button class="tool active" data-tool="select" title="Selecionar e mover (Esc)">Selecionar</button>
+      <button class="tool" data-tool="edittext" title="Clique numa frase do PDF para alterar o texto">Editar texto</button>
+      <button class="tool" data-tool="text" title="Clique na página para escrever">Texto</button>
+      <button class="tool" data-action="image" title="Inserir imagem ou logo (PNG, JPG, WEBP, GIF, BMP, SVG)">Imagem</button>
+      <button class="tool" data-action="signature" title="Assinar: desenhar, digitar ou usar imagem">Assinatura</button>
+      <span class="sep"></span>
+      <button class="tool" data-tool="whiteout" title="Arraste para cobrir e apagar o que está embaixo">Cobrir</button>
+      <button class="tool" data-tool="rect" title="Retângulo">Retângulo</button>
+      <button class="tool" data-tool="ellipse" title="Elipse">Elipse</button>
+      <button class="tool" data-tool="line" title="Linha">Linha</button>
+      <button class="tool" data-tool="arrow" title="Seta">Seta</button>
+      <button class="tool" data-tool="pen" title="Desenho livre">Desenhar</button>
+    </div>
+    <div class="panel" data-panel="comment">
+      <button class="tool" data-tool="note" title="Clique para colocar uma nota (vira comentário no PDF)">Nota</button>
+      <button class="tool" data-tool="highlight" title="Arraste sobre o trecho para destacar">Destacar</button>
+      <button class="tool" data-tool="underline" title="Arraste sobre o trecho para sublinhar">Sublinhar</button>
+      <button class="tool" data-tool="strike" title="Arraste sobre o trecho para riscar">Riscar</button>
+      <span class="sep"></span>
+      <label class="inline">Carimbo
+        <select id="stamp-select" title="Escolha um carimbo e clique na página">
+          <option value="">Escolher…</option>
+          <option value="APROVADO">Aprovado</option>
+          <option value="REPROVADO">Reprovado</option>
+          <option value="PAGO">Pago</option>
+          <option value="RECEBIDO">Recebido</option>
+          <option value="CONFIDENCIAL">Confidencial</option>
+          <option value="RASCUNHO">Rascunho</option>
+          <option value="CÓPIA">Cópia</option>
+          <option value="@data">Data de hoje</option>
+          <option value="@logo">Meu logo…</option>
+        </select>
+      </label>
+    </div>
+    <div class="panel" data-panel="pages">
+      <button class="tool" data-action="insertPdf" title="Inserir páginas de outro PDF ou de imagens no final">Inserir arquivo</button>
+      <button class="tool" data-action="blankPage" title="Página em branco depois da atual">Página em branco</button>
+      <button class="tool" data-action="duplicatePage" title="Duplicar as páginas selecionadas">Duplicar</button>
+      <button class="tool" data-action="rotateLeft" title="Girar selecionadas para a esquerda">⟲ Girar</button>
+      <button class="tool" data-action="rotateRight" title="Girar selecionadas para a direita">Girar ⟳</button>
+      <button class="tool" data-action="deletePages" title="Excluir as páginas selecionadas">Excluir</button>
+      <span class="sep"></span>
+      <button class="tool" data-action="extractPages" title="Salvar as páginas selecionadas como novo PDF">Extrair</button>
+      <button class="tool" data-action="splitPdf" title="Dividir em vários PDFs">Dividir</button>
+      <span class="hint-inline">Ctrl+clique ou Shift+clique nas miniaturas para selecionar várias</span>
+    </div>
+    <div class="panel" data-panel="document">
+      <button class="tool" data-action="watermark" title="Marca d'água em todas as páginas">Marca d'água</button>
+      <button class="tool" data-action="headerFooter" title="Cabeçalho, rodapé e numeração de páginas">Cabeçalho e rodapé</button>
+      <button class="tool" data-action="pageNumbers" title="Numerar as páginas">Numerar páginas</button>
+      <span class="sep"></span>
+      <button class="tool" data-action="ocr" title="Reconhecer texto de PDF escaneado (português e inglês)">OCR (reconhecer texto)</button>
+      <button class="tool" data-action="compress" title="Diminuir o tamanho do arquivo">Comprimir</button>
+      <button class="tool" data-action="properties" title="Título, autor, assunto, palavras-chave">Propriedades</button>
+    </div>
+    <div class="panel" data-panel="convert">
+      <button class="tool" data-action="toWord" title="Converter para Word (.docx)">PDF → Word</button>
+      <button class="tool" data-action="toImages" title="Salvar cada página como imagem">PDF → Imagens</button>
+      <button class="tool" data-action="toText" title="Salvar o texto (.txt)">PDF → Texto</button>
+      <span class="sep"></span>
+      <button class="tool" data-action="imagesToPdf" title="Criar um PDF a partir de imagens">Imagens → PDF</button>
+    </div>
+    <div class="panel" data-panel="protect">
+      <button class="tool" data-tool="redact" title="Arraste para tarjar: remove de verdade texto e imagens embaixo">Tarjar (ocultar dados)</button>
+      <button class="tool" data-action="password" title="Exigir senha para abrir e definir permissões">Senha e permissões</button>
+      <button class="tool" data-action="removePassword" title="Salvar sem senha">Remover senha</button>
+      <span class="sep"></span>
+      <label class="inline check"><input type="checkbox" id="opt-sanitize"> Remover metadados ao salvar</label>
+      <span class="hint-inline" id="protect-status"></span>
+    </div>
+  </div>
+
   <div class="propbar" id="propbar">
     <label>Fonte
-      <select id="prop-font"></select>
+      <select id="prop-font" data-no-i18n></select>
     </label>
     <label>Tamanho
       <input id="prop-size" type="number" min="4" max="200" step="1" value="14">
@@ -51,6 +127,12 @@
     </label>
     <button id="prop-bold" class="btn toggle" title="Negrito"><b>N</b></button>
     <button id="prop-italic" class="btn toggle" title="Itálico"><i>I</i></button>
+    <button id="prop-underline" class="btn toggle" title="Sublinhado"><u>S</u></button>
+    <select id="prop-align" title="Alinhamento">
+      <option value="left">Esquerda</option>
+      <option value="center">Centro</option>
+      <option value="right">Direita</option>
+    </select>
     <span class="sep"></span>
     <label>Traço
       <input id="prop-stroke" type="number" min="1" max="40" step="1" value="2">
@@ -58,41 +140,91 @@
     <label>Cor do traço
       <input id="prop-stroke-color" type="color" value="#d32f2f">
     </label>
+    <label>Opacidade
+      <input id="prop-opacity" type="range" min="10" max="100" step="5" value="100">
+    </label>
     <span class="sep"></span>
-    <button id="prop-delete" class="btn danger" disabled title="Excluir selecionado (Delete)">Excluir</button>
-    <span class="hint" id="hint"></span>
+    <button id="prop-front" class="btn small" disabled title="Trazer para frente">Frente</button>
+    <button id="prop-back" class="btn small" disabled title="Enviar para trás">Trás</button>
+    <button id="prop-duplicate" class="btn small" disabled title="Duplicar (Ctrl+D)">Duplicar</button>
+    <button id="prop-delete" class="btn small danger" disabled title="Excluir selecionado (Delete)">Excluir</button>
+    <span class="hint" id="hint" data-no-i18n></span>
   </div>
 
   <main class="workspace">
     <aside class="sidebar">
-      <div class="sidebar-head">
-        <span>Páginas</span>
-        <button id="btn-insert" class="btn small" disabled title="Inserir páginas de outro PDF no final">+ Inserir PDF</button>
+      <div class="side-tabs">
+        <button class="side-tab active" data-side="thumbs">Páginas</button>
+        <button class="side-tab" data-side="outline">Marcadores</button>
+        <button class="side-tab" data-side="comments">Comentários</button>
       </div>
-      <ol id="thumbs" class="thumbs"></ol>
+      <ol id="thumbs" class="thumbs side-panel active" data-side-panel="thumbs" data-no-i18n></ol>
+      <div id="outline" class="side-panel outline" data-side-panel="outline" data-no-i18n></div>
+      <div id="comments" class="side-panel comments" data-side-panel="comments" data-no-i18n></div>
     </aside>
 
     <section id="viewer" class="viewer">
+      <div id="searchbar" class="searchbar" hidden>
+        <input id="search-input" type="search" placeholder="Procurar no documento" autocomplete="off">
+        <span id="search-count" class="muted"></span>
+        <button id="search-prev" class="btn icon small" title="Anterior (Shift+Enter)">↑</button>
+        <button id="search-next" class="btn icon small" title="Próximo (Enter)">↓</button>
+        <button id="search-close" class="btn icon small" title="Fechar (Esc)">✕</button>
+      </div>
       <div id="empty" class="empty">
         <div class="empty-card">
+          <img src="img/emblem.png" alt="CyberSecInfo" class="empty-emblem">
+          <p class="brand-line">cybersecinfo.com · @cybersecinfo</p>
           <h1>Editor PDF</h1>
-          <p>Abra um PDF para editar o texto, escrever por cima, assinar, organizar páginas e preencher formulários.</p>
-          <button id="btn-open-empty" class="btn primary big">Abrir PDF</button>
-          <p class="muted">ou arraste um arquivo .pdf para esta janela</p>
+          <p>Edite o texto do PDF, assine, comente, organize páginas, converta, comprima, proteja com senha e reconheça texto de documentos escaneados.</p>
+          <button id="btn-open-empty" class="btn primary big">Abrir PDF ou imagens</button>
+          <p class="muted">ou arraste arquivos para esta janela</p>
+          <div id="recent" class="recent" hidden>
+            <div class="recent-head"><span>Abertos recentemente</span><button id="recent-clear" class="linkbtn">limpar</button></div>
+            <ul id="recent-list" data-no-i18n></ul>
+          </div>
         </div>
       </div>
-      <div id="pages" class="pages"></div>
+      <div id="pages" class="pages" data-no-i18n></div>
     </section>
   </main>
 
+  <!-- Diálogo genérico -->
+  <div id="dialog" class="modal" hidden data-no-i18n>
+    <form id="dialog-form" class="modal-card" autocomplete="off">
+      <h2 id="dialog-title"></h2>
+      <div id="dialog-body"></div>
+      <div class="modal-actions" id="dialog-actions"></div>
+    </form>
+  </div>
+
+  <!-- Assinatura -->
   <div id="sig-modal" class="modal" hidden>
-    <div class="modal-card">
+    <div class="modal-card wide">
       <h2>Assinatura</h2>
-      <p class="muted">Assine com o mouse ou com o dedo dentro do quadro.</p>
-      <canvas id="sig-canvas" width="640" height="220"></canvas>
+      <div class="seg" id="sig-tabs">
+        <button class="seg-btn active" data-sig="draw">Desenhar</button>
+        <button class="seg-btn" data-sig="type">Digitar</button>
+        <button class="seg-btn" data-sig="saved">Salvas</button>
+      </div>
+      <div class="sig-pane" data-sig-pane="draw">
+        <canvas id="sig-canvas" width="640" height="220"></canvas>
+        <div class="row"><label>Cor <input id="sig-color" type="color" value="#0d47a1"></label><button id="sig-clear" class="btn small">Limpar</button></div>
+      </div>
+      <div class="sig-pane" data-sig-pane="type" hidden>
+        <input id="sig-name" class="big-input" type="text" placeholder="Digite seu nome">
+        <div class="row">
+          <label>Estilo <select id="sig-font" data-no-i18n></select></label>
+          <label>Cor <input id="sig-type-color" type="color" value="#0d47a1"></label>
+        </div>
+        <canvas id="sig-type-canvas" width="640" height="160"></canvas>
+      </div>
+      <div class="sig-pane" data-sig-pane="saved" hidden>
+        <div id="sig-saved" class="sig-saved" data-no-i18n></div>
+        <p class="muted small">As assinaturas ficam guardadas só neste computador.</p>
+      </div>
       <div class="modal-actions">
-        <label>Cor <input id="sig-color" type="color" value="#0d47a1"></label>
-        <button id="sig-clear" class="btn">Limpar</button>
+        <label class="inline check"><input type="checkbox" id="sig-remember" checked> Guardar para usar depois</label>
         <span class="spacer"></span>
         <button id="sig-cancel" class="btn">Cancelar</button>
         <button id="sig-ok" class="btn primary">Inserir</button>
@@ -100,8 +232,10 @@
     </div>
   </div>
 
-  <div id="busy" class="busy" hidden><div class="busy-card" id="busy-text">Processando…</div></div>
-  <div id="toast" class="toast" hidden></div>
+  <div id="splash" class="splash"><img src="img/emblem.png" alt="CyberSecInfo"><span>Editor PDF</span><small>cybersecinfo.com · @cybersecinfo</small></div>
+  <div id="busy" class="busy" hidden><div class="busy-card"><div class="spinner"></div><span id="busy-text" data-no-i18n>Processando…</span></div></div>
+  <div id="toast" class="toast" hidden data-no-i18n></div>
+  <div id="print-area" class="print-area"></div>
 
   <script src="../node_modules/pdf-lib/dist/pdf-lib.min.js"></script>
   <script src="../node_modules/@pdf-lib/fontkit/dist/fontkit.umd.min.js"></script>

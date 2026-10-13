@@ -1,6 +1,7 @@
 // "Editar texto": encontra as frases da página (pdf.js), mostra áreas clicáveis e, ao clicar,
 // cobre a frase original com a cor do fundo e coloca uma caixa de texto editável no lugar.
 import { pdfjs, fabric, TEXT_BASELINE_RATIO, newUid } from './libs.js';
+import { t } from './i18n.js';
 
 function familyFromName(name, generic) {
   const n = (name || '').toLowerCase();
@@ -16,14 +17,19 @@ function familyFromName(name, generic) {
 }
 
 // Agrupa os pedaços de texto do pdf.js em frases (mesma linha, próximos e do mesmo tamanho)
-export async function loadTextRuns(entry) {
+// includeRotated: devolve também o texto girado na tela (para a busca), um pedaço por item
+export async function loadTextRuns(entry, { includeRotated = false } = {}) {
   const vp = entry.viewport();
   const content = await entry.proxy.getTextContent();
   const items = [];
+  const rotated = [];
   for (const it of content.items) {
     if (!it.str || !it.str.trim()) continue;
     const tx = pdfjs.Util.transform(vp.transform, it.transform);
-    if (Math.abs(Math.atan2(tx[1], tx[0])) > 0.02) continue; // texto girado em relação à tela
+    if (Math.abs(Math.atan2(tx[1], tx[0])) > 0.02) { // texto girado em relação à tela
+      if (includeRotated) rotated.push(rotatedBox(vp, it));
+      continue;
+    }
     const height = Math.hypot(tx[2], tx[3]);
     if (height < 2) continue;
     const style = content.styles[it.fontName] || {};
@@ -68,7 +74,7 @@ export async function loadTextRuns(entry) {
     }
   }
 
-  return runs.map((r, i) => {
+  const flat = runs.map((r, i) => {
     const lead = r.str.length - r.str.trimStart().length;
     const str = r.str.trim();
     const left = r.left + lead * r.height * 0.25;
@@ -85,6 +91,24 @@ export async function loadTextRuns(entry) {
       generic: r.generic,
     };
   });
+  return flat.concat(rotated.map((r, i) => ({ ...r, key: `${entry.docKey}:${entry.index}:${entry.rotation()}:r${i}` })));
+}
+
+// Caixa (alinhada à tela) de um pedaço de texto girado
+function rotatedBox(vp, it) {
+  const [a, b, c, d, e, f] = it.transform;
+  const len = Math.hypot(a, b) || 1;
+  const up = Math.hypot(c, d) || 1;
+  const dir = [a / len, b / len];
+  const nrm = [c / up, d / up];
+  const h = up;
+  const corners = [[0, -0.2 * h], [it.width, -0.2 * h], [it.width, 0.9 * h], [0, 0.9 * h]].map(([x, y]) =>
+    vp.convertToViewportPoint(e + dir[0] * x + nrm[0] * y, f + dir[1] * x + nrm[1] * y));
+  const xs = corners.map((p) => p[0]);
+  const ys = corners.map((p) => p[1]);
+  const left = Math.min(...xs);
+  const top = Math.min(...ys);
+  return { str: it.str.trim(), left, top, width: Math.max(...xs) - left, bottom: Math.max(...ys), vertical: true };
 }
 
 function fontDetails(entry, run) {
@@ -178,7 +202,7 @@ export function renderTextHits(entry, zoom, onPick) {
   const layer = entry.hitLayer;
   layer.replaceChildren();
   if (!entry.runs) return;
-  const used = new Set(entry.fabric.getObjects().map((o) => o.runKey).filter(Boolean));
+  const used = new Set(entry.plainObjects().map((o) => o.runKey).filter(Boolean));
   for (const run of entry.runs) {
     if (used.has(run.key)) continue;
     const el = document.createElement('div');
@@ -189,7 +213,7 @@ export function renderTextHits(entry, zoom, onPick) {
       width: `${(run.width + 2) * zoom}px`,
       height: `${(run.bottom - run.top + 2) * zoom}px`,
     });
-    el.title = 'Clique para editar este texto';
+    el.title = t('Clique para editar este texto');
     el.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); onPick(entry, run); });
     layer.append(el);
   }

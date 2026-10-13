@@ -41,3 +41,29 @@ a1.drawText('Inventário do imóvel.', { x: 72, y: 725, size: 12, font: await an
 await fs.writeFile(path.join(dir, 'anexo.pdf'), await anexo.save());
 
 console.log('Fixtures em', dir);
+
+// PDF protegido por senha ("abc") e PDF "escaneado" (só imagem), gerados com o motor
+const { ops } = await import('../engine/ops.mjs');
+const contrato = new Uint8Array(await fs.readFile(path.join(dir, 'contrato.pdf')));
+const locked = ops.finalize({ bytes: contrato, encrypt: { user: 'abc', owner: 'dono123', permissions: -4 } });
+await fs.writeFile(path.join(dir, 'protegido.pdf'), locked.bytes);
+
+const png = ops.renderPages({ bytes: contrato, dpi: 200, format: 'png', pages: [0] }).images[0];
+const scan = await PDFDocument.create();
+const scanImg = await scan.embedPng(png);
+scan.addPage([595, 842]).drawImage(scanImg, { x: 0, y: 0, width: 595, height: 842 });
+await fs.writeFile(path.join(dir, 'escaneado.pdf'), await scan.save());
+
+await fs.copyFile(path.resolve('app/img/emblem.png'), path.join(dir, 'logo.png'));
+console.log('Fixtures extras: protegido.pdf, escaneado.pdf, logo.png');
+
+// Documento grande (40 páginas) para testar memória e exclusão de página confidencial
+const big = await PDFDocument.create();
+const bigFont = await big.embedFont(StandardFonts.Helvetica);
+for (let i = 1; i <= 40; i++) {
+  const pg = big.addPage([595, 842]);
+  pg.drawText(`Página ${i} de teste grande`, { x: 72, y: 760, size: 18, font: bigFont });
+  if (i === 2) pg.drawText('SEGREDO-PAG-2 número da conta 12345-6', { x: 72, y: 720, size: 12, font: bigFont });
+}
+await fs.writeFile(path.join(dir, 'grande.pdf'), await big.save());
+console.log('Fixture extra: grande.pdf');

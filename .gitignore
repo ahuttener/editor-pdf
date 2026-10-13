@@ -1,8 +1,9 @@
 node_modules/
 dist/
-test-output/
-test-output-pkg/
+test-output*/
 test-fixtures/
+vendor/
 *.log
 *.err
 .impeccable/
+scripts/probe/

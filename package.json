@@ -3,7 +3,7 @@
   "productName": "Editor PDF",
   "version": "1.0.0",
   "description": "Editor de PDF para Windows: editar texto existente, adicionar texto, imagem e assinatura, organizar páginas e preencher formulários.",
-  "author": "Adriano",
+  "author": "CyberSecInfo",
   "license": "UNLICENSED",
   "private": true,
   "main": "main.js",
@@ -12,13 +12,18 @@
     "start": "electron .",
     "fixtures": "node scripts/make-fixtures.mjs",
     "selftest": "node scripts/make-fixtures.mjs && electron . --selftest=test-output && node scripts/verify.mjs test-output",
-    "dist": "electron-builder --win nsis"
+    "dist": "node scripts/prepare-vendor.mjs && electron-builder --win nsis"
   },
   "dependencies": {
     "@pdf-lib/fontkit": "^1.1.1",
+    "@tesseract.js-data/eng": "^1.0.0",
+    "@tesseract.js-data/por": "^1.0.0",
+    "docx": "^9.11.0",
     "fabric": "^7.4.0",
+    "mupdf": "^1.28.1",
     "pdf-lib": "^1.17.1",
-    "pdfjs-dist": "^6.4.299"
+    "pdfjs-dist": "^6.4.299",
+    "tesseract.js": "^7.0.0"
   },
   "devDependencies": {
     "electron": "^44.7.1",
@@ -31,36 +36,62 @@
       "main.js",
       "preload.js",
       "app/**/*",
+      "engine/**/*",
+      "vendor/**/*",
       "build/icon.png",
-      "!**/node_modules/**/*",
-      "node_modules/pdfjs-dist/build/pdf.min.mjs",
-      "node_modules/pdfjs-dist/build/pdf.worker.min.mjs",
-      "node_modules/pdfjs-dist/cmaps/**/*",
-      "node_modules/pdfjs-dist/standard_fonts/**/*",
-      "node_modules/pdfjs-dist/wasm/**/*",
-      "node_modules/pdfjs-dist/iccs/**/*",
-      "node_modules/pdfjs-dist/LICENSE",
-      "node_modules/pdfjs-dist/package.json",
-      "node_modules/fabric/dist/index.min.mjs",
-      "node_modules/fabric/package.json",
-      "node_modules/fabric/LICENSE",
-      "node_modules/pdf-lib/dist/pdf-lib.min.js",
-      "node_modules/pdf-lib/package.json",
-      "node_modules/pdf-lib/LICENSE.md",
-      "node_modules/@pdf-lib/fontkit/dist/fontkit.umd.min.js",
-      "node_modules/@pdf-lib/fontkit/package.json",
-      "node_modules/@pdf-lib/fontkit/LICENSE"
+      "!**/*.map",
+      "!**/*.d.ts",
+      "!**/*.d.cts",
+      "!**/README*",
+      "!**/CHANGELOG*",
+      "!node_modules/pdfjs-dist/legacy/**",
+      "!node_modules/pdfjs-dist/web/**",
+      "!node_modules/pdfjs-dist/image_decoders/**",
+      "!node_modules/pdfjs-dist/types/**",
+      "!node_modules/pdfjs-dist/build/pdf.mjs",
+      "!node_modules/pdfjs-dist/build/pdf.worker.mjs",
+      "!node_modules/pdfjs-dist/build/pdf.sandbox*",
+      "!node_modules/fabric/dist/fabric.*",
+      "!node_modules/fabric/dist/index.mjs",
+      "!node_modules/fabric/dist/index.node.*",
+      "!node_modules/fabric/dist/package.*",
+      "!node_modules/fabric/dist/index.js",
+      "!node_modules/fabric/dist/index.cjs",
+      "!node_modules/fabric/src/**",
+      "!node_modules/fabric/dist/src/**",
+      "!node_modules/docx/dist/{charts,html,layout,math,shapes,watermarks}.*",
+      "!node_modules/docx/dist/index.iife.js",
+      "!node_modules/docx/dist/index.umd.cjs",
+      "!node_modules/@tesseract.js-data/**",
+      "!node_modules/mupdf/dist/*.br",
+      "!node_modules/pdf-lib/es/**",
+      "!node_modules/pdf-lib/cjs/**/*.map",
+      "!node_modules/pdf-lib/src/**"
     ],
     "win": {
       "target": "nsis",
-      "icon": "build/icon.png"
+      "icon": "build/icon.ico"
     },
     "nsis": {
       "oneClick": false,
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "shortcutName": "Editor PDF"
+      "shortcutName": "Editor PDF",
+      "installerSidebar": "build/installerSidebar.bmp",
+      "uninstallerSidebar": "build/uninstallerSidebar.bmp",
+      "installerHeader": "build/installerHeader.bmp",
+      "installerHeaderIcon": "build/icon.ico",
+      "installerIcon": "build/installer.ico",
+      "uninstallerIcon": "build/installer.ico",
+      "multiLanguageInstaller": true,
+      "runAfterFinish": true,
+      "include": "build/installer.nsh",
+      "unicode": true,
+      "installerLanguages": [
+        "pt_BR",
+        "en_US"
+      ]
     },
     "fileAssociations": [
       {
@@ -69,6 +100,31 @@
         "description": "Documento PDF",
         "role": "Editor"
       }
-    ]
+    ],
+    "copyright": "© 2026 CyberSecInfo",
+    "asarUnpack": [
+      "engine/**/*",
+      "vendor/**/*",
+      "node_modules/mupdf/**/*",
+      "node_modules/tesseract.js/**/*",
+      "node_modules/tesseract.js-core/**/*"
+    ],
+    "mac": {
+      "icon": "build/icon-1024.png",
+      "category": "public.app-category.productivity",
+      "target": [
+        "dmg"
+      ]
+    },
+    "linux": {
+      "icon": "build/icon-1024.png",
+      "category": "Office",
+      "target": [
+        "AppImage",
+        "deb",
+        "rpm"
+      ],
+      "synopsis": "PDF editor"
+    }
   }
 }
