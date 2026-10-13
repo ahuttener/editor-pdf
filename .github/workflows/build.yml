@@ -23,6 +23,8 @@ jobs:
           - os: ubuntu-latest
             target: --linux AppImage deb rpm
     runs-on: ${{ matrix.os }}
+    env:
+      HAS_MAC_CERT: ${{ secrets.MAC_CERT_P12_BASE64 != '' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -41,11 +43,33 @@ jobs:
       - name: Preparar idiomas do OCR
         run: node scripts/prepare-vendor.mjs
 
+      # Mac: assina e notariza quando os segredos existem (Settings > Secrets > Actions):
+      #   MAC_CERT_P12_BASE64, MAC_CERT_PASSWORD (certificado Developer ID Application)
+      #   APPLE_API_KEY_P8 (conteúdo do .p8), APPLE_API_KEY_ID, APPLE_API_ISSUER (chave de API do App Store Connect)
+      - name: Preparar assinatura do Mac
+        if: runner.os == 'macOS' && env.HAS_MAC_CERT == 'true'
+        env:
+          MAC_CERT_P12_BASE64: ${{ secrets.MAC_CERT_P12_BASE64 }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+        run: |
+          echo "$APPLE_API_KEY_P8" > "$RUNNER_TEMP/apple-api-key.p8"
+          echo "CSC_LINK=$MAC_CERT_P12_BASE64" >> "$GITHUB_ENV"
+          echo "APPLE_API_KEY=$RUNNER_TEMP/apple-api-key.p8" >> "$GITHUB_ENV"
+          echo "MAC_SIGN=1" >> "$GITHUB_ENV"
+
       - name: Gerar instaladores
         env:
-          # Sem certificado ainda: o Mac e o Windows geram versões não assinadas
-          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-        run: npx electron-builder ${{ matrix.target }} --publish never
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        shell: bash
+        run: |
+          if [ "$MAC_SIGN" = "1" ]; then
+            npx electron-builder ${{ matrix.target }} --publish never -c.mac.notarize=true
+          else
+            # sem certificado: gera versões não assinadas
+            CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder ${{ matrix.target }} --publish never
+          fi
 
       - name: Guardar os instaladores
         uses: actions/upload-artifact@v4

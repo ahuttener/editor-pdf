@@ -111,7 +111,11 @@
       "category": "public.app-category.productivity",
       "target": [
         "dmg"
-      ]
+      ],
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist"
     },
     "linux": {
       "icon": "build/icon-1024.png",
