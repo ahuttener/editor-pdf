@@ -155,7 +155,17 @@ function homeView() {
       <h2 class="sec">${t('Atalhos')}</h2>
       <div class="quick">${QUICK.map(([id, ic, label]) => `<button class="qcell" data-quick="${id}"><span class="qdisc">${icon(ic, { size: 22 })}</span><span>${t(label)}</span></button>`).join('')}</div>
       <div class="sec-row"><h2 class="sec">${t('Recentes')}</h2>${docs.length > 3 ? `<button class="link" data-tab="files">${t('ver todos')}</button>` : ''}</div>
-      ${docs.length ? `<ul class="docs">${docs.slice(0, 3).map(docRow).join('')}</ul>` : emptyState()}
+      <div class="recents">${docs.length ? `<ul class="docs">${docs.slice(0, 12).map(docRow).join('')}</ul>` : emptyState()}</div>
+      <div class="brand-card">
+        <img src="img/emblem.png" alt="CyberSecInfo">
+        <div class="bc-txt">
+          <small>${t('Feito por')}</small><strong>CyberSecInfo</strong>
+          <div class="links">
+            <button class="linkbtn" data-url="${SITE}">${icon('globe', { size: 16 })}<span>cybersecinfo.com</span></button>
+            <button class="linkbtn" data-url="${INSTAGRAM}">${icon('instagram', { size: 16 })}<span>@cyber_secinfo</span></button>
+          </div>
+        </div>
+      </div>
     </div>
   </div>`;
 }

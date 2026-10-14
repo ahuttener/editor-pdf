@@ -62,6 +62,7 @@ const EN = {
   'Cobrir': 'Cover',
   'Imagem': 'Image',
   'Imprimir': 'Print',
+  'Feito por': 'Made by',
   'Não foi possível imprimir.': 'Could not print.',
   'Cor': 'Color',
   'Assinatura': 'Signature',

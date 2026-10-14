@@ -8,8 +8,8 @@ fabric.FabricObject.ownDefaults.originY = 'top';
 Object.assign(fabric.InteractiveFabricObject.ownDefaults, {
   transparentCorners: false,
   cornerColor: '#ffffff',
-  cornerStrokeColor: '#c8141c',
-  borderColor: '#c8141c',
+  cornerStrokeColor: '#0b63d8',
+  borderColor: '#0b63d8',
   cornerStyle: 'circle',
   cornerSize: 14,
   touchCornerSize: 36,

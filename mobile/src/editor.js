@@ -366,7 +366,7 @@ export async function openEditor({ name, id = null, bytes, mode = 'annotate', pr
       const pt = canvas.getScenePoint(e.e);
       const tool = state.tool;
       if (tool === 'text') {
-        const obj = new fabric.IText('', { left: pt.x, top: pt.y - 8, fontFamily: FONT, fontSize: 14, fill: colors.text, kind: 'text', editingBorderColor: '#c8141c', cursorColor: '#c8141c' });
+        const obj = new fabric.IText('', { left: pt.x, top: pt.y - 8, fontFamily: FONT, fontSize: 14, fill: colors.text, kind: 'text', editingBorderColor: '#0b63d8', cursorColor: '#0b63d8' });
         obj._creating = true;
         canvas.add(obj);
         obj._creating = false;
@@ -380,7 +380,7 @@ export async function openEditor({ name, id = null, bytes, mode = 'annotate', pr
       if (tool === 'note') {
         const note = new fabric.Textbox('', {
           left: pt.x, top: pt.y, width: 150, fontFamily: FONT, fontSize: 11, fill: colors.text, backgroundColor: '#fff3a8',
-          kind: 'note', editingBorderColor: '#c8141c', cursorColor: '#c8141c', splitByGrapheme: false,
+          kind: 'note', editingBorderColor: '#0b63d8', cursorColor: '#0b63d8', splitByGrapheme: false,
         });
         note._creating = true;
         canvas.add(note);
@@ -777,7 +777,7 @@ export async function openEditor({ name, id = null, bytes, mode = 'annotate', pr
     const cover = new fabric.Rect({ left: hit.left - 2, top: hit.top - 1, width: hit.right - hit.left + 5, height: hit.bottom - hit.top + 2, fill: bg, strokeWidth: 0, kind: 'edit-cover', selectable: false, evented: false });
     const text = new fabric.IText(hit.str, {
       left: hit.baseX, top: hit.baseY - hit.size * TEXT_BASELINE_RATIO, fontFamily: family, fontSize: hit.size, fill: ink,
-      fontWeight: hit.bold ? 'bold' : 'normal', fontStyle: hit.italic ? 'italic' : 'normal', kind: 'text', editingBorderColor: '#c8141c', cursorColor: '#c8141c',
+      fontWeight: hit.bold ? 'bold' : 'normal', fontStyle: hit.italic ? 'italic' : 'normal', kind: 'text', editingBorderColor: '#0b63d8', cursorColor: '#0b63d8',
     });
     canvas.add(cover);
     canvas.add(text);
