@@ -8,7 +8,7 @@
     "email": "info@cybersecinfo.com",
     "url": "https://cybersecinfo.com"
   },
-  "license": "UNLICENSED",
+  "license": "AGPL-3.0-or-later",
   "private": true,
   "main": "main.js",
   "type": "commonjs",
