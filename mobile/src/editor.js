@@ -109,6 +109,7 @@ export async function openEditor({ name, id = null, bytes, mode = 'annotate', pr
     <header class="ed-top">
       <button class="icon-btn" data-act="back" aria-label="${t('Voltar')}">${icon('back')}</button>
       <div class="ed-title"><strong></strong><small></small></div>
+      <button class="icon-btn" data-act="print" aria-label="${t('Imprimir')}">${icon('printer')}</button>
       <button class="icon-btn" data-act="undo" aria-label="${t('Desfazer')}" disabled>${icon('undo')}</button>
       <button class="icon-btn" data-act="redo" aria-label="${t('Refazer')}" disabled>${icon('redo')}</button>
       <button class="btn btn-primary btn-sm" data-act="save">${icon('check', { size: 18, stroke: 2.4 })}<span>${t('Salvar')}</span></button>
@@ -1115,6 +1116,23 @@ export async function openEditor({ name, id = null, bytes, mode = 'annotate', pr
     $('[data-ok]', s.el).addEventListener('click', () => s.close());
   }
 
+  // Imprime o documento como está na tela (com as alterações ainda não salvas)
+  async function printNow() {
+    for (const v of views.values()) {
+      const obj = v.canvas?.getActiveObject();
+      if (obj?.isEditing) obj.exitEditing();
+    }
+    const stop = busy(t('Preparando a impressão…'));
+    let bytes;
+    try { bytes = await buildPdf(doc); } catch (err) {
+      console.error(err);
+      stop();
+      return toast(t('Não foi possível imprimir.'), 'error');
+    }
+    stop();
+    try { await printPdf(bytes, doc.name); } catch { toast(t('Não foi possível imprimir.'), 'error'); }
+  }
+
   async function back() {
     if (document.querySelector('.sheet-root')) return;
     if (state.dirty) {
@@ -1142,6 +1160,7 @@ export async function openEditor({ name, id = null, bytes, mode = 'annotate', pr
     const act = b.dataset.act;
     if (act === 'back') back();
     else if (act === 'save') save();
+    else if (act === 'print') printNow();
     else if (act === 'undo') step(state.undo, state.redo, 'before');
     else if (act === 'redo') step(state.redo, state.undo, 'after');
   });
