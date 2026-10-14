@@ -353,7 +353,8 @@ export async function openEditor({ name, id = null, bytes, mode = 'annotate', pr
     canvas.on('text:changed', () => keepVisible());
     canvas.on('text:editing:exited', (e) => {
       const obj = e.target;
-      if (obj && !obj.text.trim()) canvas.remove(obj); else commit(key);
+      // texto apagado por inteiro: remove depois que o fabric termina de fechar a edição (removê-lo no meio quebra)
+      if (obj && !obj.text.trim()) setTimeout(() => { canvas.remove(obj); canvas.requestRenderAll(); }); else commit(key);
     });
     canvas.on('selection:created', () => { showSelbar(key); applyToolTo(v); });
     canvas.on('selection:updated', () => showSelbar(key));
@@ -710,11 +711,54 @@ export async function openEditor({ name, id = null, bytes, mode = 'annotate', pr
         const [x0, y0, x1, y1] = vpRect(vp, [e, f - size * 0.22, e + it.width, f + size * 0.9]);
         const [bx, by] = vp.convertToViewportPoint(e, f);
         const style = tc.styles[it.fontName] || {};
-        items.push({ str: it.str, size, left: Math.min(x0, x1), top: Math.min(y0, y1), right: Math.max(x0, x1), bottom: Math.max(y0, y1), baseX: bx, baseY: by, family: style.fontFamily || 'sans-serif' });
+        let font = null;
+        try { if (pg.commonObjs.has(it.fontName)) font = pg.commonObjs.get(it.fontName); } catch {}
+        const real = `${font?.name || ''} ${font?.loadedName || ''}`;
+        items.push({
+          str: it.str, size, left: Math.min(x0, x1), top: Math.min(y0, y1), right: Math.max(x0, x1), bottom: Math.max(y0, y1), baseX: bx, baseY: by,
+          family: style.fontFamily || 'sans-serif', bold: !!(font?.bold || font?.black) || /bold|black|heavy|semibold|demi/i.test(real), italic: !!font?.italic || /italic|oblique/i.test(real),
+        });
       }
       textCache.set(k, items);
     }
     return textCache.get(k);
+  }
+
+  const hex = (r, g, b) => `#${[r, g, b].map((c) => Math.round(c).toString(16).padStart(2, '0')).join('')}`;
+  function sampleColors(v, r) {
+    const fallback = { bg: '#ffffff', ink: '#111827' };
+    const img = v && $('.pg-img', v.el);
+    if (!img?.width) return fallback;
+    try {
+      const k = img.width / v.vp.width;
+      const pad = 3;
+      const x0 = Math.max(0, Math.floor((r.left - pad) * k));
+      const y0 = Math.max(0, Math.floor((r.top - pad) * k));
+      const x1 = Math.min(img.width, Math.ceil((r.right + pad) * k));
+      const y1 = Math.min(img.height, Math.ceil((r.bottom + pad) * k));
+      const w = x1 - x0;
+      const hh = y1 - y0;
+      if (w < 4 || hh < 4) return fallback;
+      const data = img.getContext('2d', { willReadFrequently: true }).getImageData(x0, y0, w, hh).data;
+      const ring = [];
+      const inner = [];
+      const edge = Math.max(1, Math.round(pad * k * 0.6));
+      for (let y = 0; y < hh; y++) {
+        for (let x = 0; x < w; x++) {
+          const i = (y * w + x) * 4;
+          const px = [data[i], data[i + 1], data[i + 2]];
+          if (x < edge || y < edge || x >= w - edge || y >= hh - edge) ring.push(px); else inner.push(px);
+        }
+      }
+      // fundo = mediana da borda
+      const med = (list, c) => list.map((p) => p[c]).sort((a, b) => a - b)[list.length >> 1];
+      const bg = [0, 1, 2].map((c) => med(ring, c));
+      // tinta = média dos pixels que mais diferem do fundo
+      const dist = (p) => Math.abs(p[0] - bg[0]) + Math.abs(p[1] - bg[1]) + Math.abs(p[2] - bg[2]);
+      const far = inner.filter((p) => dist(p) > 120).sort((a, b) => dist(b) - dist(a)).slice(0, Math.max(8, Math.round(inner.length * 0.05)));
+      const ink = far.length ? [0, 1, 2].map((c) => far.reduce((sum, p) => sum + p[c], 0) / far.length) : null;
+      return { bg: hex(...bg), ink: ink ? hex(...ink) : fallback.ink };
+    } catch { return fallback; }
   }
 
   async function editTextAt(key, pt) {
@@ -727,8 +771,13 @@ export async function openEditor({ name, id = null, bytes, mode = 'annotate', pr
     const family = /serif/i.test(hit.family) && !/sans/i.test(hit.family) ? 'Times New Roman, serif' : /mono/i.test(hit.family) ? 'Courier New, monospace' : FONT;
     state.loading = true;
     // A cobertura apaga a frase original ao salvar (só o texto; linhas de tabela ficam)
-    const cover = new fabric.Rect({ left: hit.left - 1, top: hit.top, width: hit.right - hit.left + 2, height: hit.bottom - hit.top, fill: '#ffffff', strokeWidth: 0, kind: 'edit-cover', selectable: false, evented: false });
-    const text = new fabric.IText(hit.str, { left: hit.baseX, top: hit.baseY - hit.size * TEXT_BASELINE_RATIO, fontFamily: family, fontSize: hit.size, fill: '#111827', kind: 'text', editingBorderColor: '#c8141c', cursorColor: '#c8141c' });
+    // Cores lidas da própria página: fundo (borda em volta da frase) e tinta (pixels mais escuros/contrastantes)
+    const { bg, ink } = sampleColors(views.get(key), hit);
+    const cover = new fabric.Rect({ left: hit.left - 2, top: hit.top - 1, width: hit.right - hit.left + 5, height: hit.bottom - hit.top + 2, fill: bg, strokeWidth: 0, kind: 'edit-cover', selectable: false, evented: false });
+    const text = new fabric.IText(hit.str, {
+      left: hit.baseX, top: hit.baseY - hit.size * TEXT_BASELINE_RATIO, fontFamily: family, fontSize: hit.size, fill: ink,
+      fontWeight: hit.bold ? 'bold' : 'normal', fontStyle: hit.italic ? 'italic' : 'normal', kind: 'text', editingBorderColor: '#c8141c', cursorColor: '#c8141c',
+    });
     canvas.add(cover);
     canvas.add(text);
     state.loading = false;

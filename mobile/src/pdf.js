@@ -84,6 +84,7 @@ async function stampPage(outDoc, outPage, viewport, objects, fontOf, fill = () =
   objects = objects.filter((o) => !filled.has(o.text + '|' + Math.round(o.left) + '|' + Math.round(o.top)));
   for (const o of objects) {
     if (FIELD_KINDS.has(o.kind)) continue; // viram campos de formulário de verdade (buildPdf)
+    if (o.kind === 'edit-cover') continue; // a frase original já foi apagada de verdade: o fundo real aparece
     if (o.type?.toLowerCase().includes('text') && o.text) {
       try { (await fontOf(o)).encodeText(o.text.replace(/\n/g, '')); texts.push(o); } catch { raster.push(o); }
     } else if (BOX_KINDS.has(o.kind) && !(o.angle % 360) && typeof o.fill === 'string' && o.fill.startsWith('#')) boxes.push(o);
