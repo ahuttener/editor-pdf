@@ -62,6 +62,50 @@ export function promptSheet({ title, label, value = '', ok = t('Salvar') }) {
   });
 }
 
+// Formulário num painel: fields = [{ name, label, type: text|password|number|select|checkbox|color|note, value, options:[[v,rótulo]], show:(v)=>bool }]
+// Devolve os valores (números já convertidos) ou null. validate(v) devolve a mensagem de erro ou null.
+export function formSheet({ title, fields, ok = t('OK'), validate, intro = '' }) {
+  return new Promise((resolve) => {
+    const field = (f) => {
+      const lab = esc(t(f.label || ''));
+      if (f.type === 'note') return `<p class="form-note">${esc(t(f.text))}</p>`;
+      if (f.type === 'checkbox') return `<label class="check" data-f="${f.name}"><input type="checkbox" name="${f.name}" ${f.value ? 'checked' : ''}><span>${lab}</span></label>`;
+      if (f.type === 'select') return `<label class="field" data-f="${f.name}"><span>${lab}</span><select name="${f.name}">${f.options.map(([v, l]) => `<option value="${esc(v)}" ${String(v) === String(f.value) ? 'selected' : ''}>${esc(t(l))}</option>`).join('')}</select></label>`;
+      const attrs = f.type === 'number' ? `inputmode="numeric" min="${f.min ?? ''}" max="${f.max ?? ''}"` : '';
+      return `<label class="field" data-f="${f.name}"><span>${lab}</span><input type="${f.type || 'text'}" name="${f.name}" value="${esc(f.value ?? '')}" placeholder="${esc(t(f.placeholder || ''))}" autocomplete="off" ${attrs}></label>`;
+    };
+    const s = sheet(`${intro}<form class="form" novalidate>${fields.map(field).join('')}<p class="form-error" hidden></p>
+      <div class="sheet-actions"><button class="btn btn-primary" type="submit">${esc(t(ok))}</button></div></form>`, { title: t(title), onClose: (v) => resolve(v ?? null) });
+    const form = $('form', s.el);
+    const values = () => {
+      const v = {};
+      for (const f of fields) {
+        if (!f.name) continue;
+        const el = form.elements[f.name];
+        if (f.type === 'checkbox') v[f.name] = el.checked;
+        else if (f.type === 'number') v[f.name] = el.value === '' ? null : Number(el.value);
+        else v[f.name] = el.value;
+      }
+      return v;
+    };
+    const sync = () => {
+      const v = values();
+      for (const f of fields) if (f.show) $(`[data-f="${f.name}"]`, form).hidden = !f.show(v);
+    };
+    form.addEventListener('input', sync);
+    form.addEventListener('change', sync);
+    sync();
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const v = values();
+      const err = validate?.(v);
+      const box = $('.form-error', form);
+      if (err) { box.textContent = t(err); box.hidden = false; return; }
+      s.close(v);
+    });
+  });
+}
+
 let toastTimer;
 export function toast(text, kind = '') {
   let el = $('#toast');
@@ -75,7 +119,9 @@ export function toast(text, kind = '') {
 export function busy(text) {
   const el = h(`<div class="busy" role="status"><div class="busy-card"><div class="spinner"></div><span>${esc(text)}</span></div></div>`);
   document.body.append(el);
-  return () => el.remove();
+  const stop = () => el.remove();
+  stop.update = (msg) => { $('span', el).textContent = msg; };
+  return stop;
 }
 
 // Seletor de arquivo do sistema (funciona no Android, iOS e navegador)

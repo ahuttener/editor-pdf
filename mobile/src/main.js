@@ -15,6 +15,7 @@ import { listDocs, readDoc, deleteDoc, renameDoc, shareDoc, saveDoc, openExterna
 import { openEditor, editorIsOpen, editorBack } from './editor.js';
 import { mergePdfs, imagesToPdf, loadPdf, thumbnail } from './pdf.js';
 import { savedSignature, clearSignature } from './signature.js';
+import { TOOL_GROUPS, TOOL_ACTIONS, setupTools, ensureUnlocked } from './tools.js';
 
 const VERSION = '1.0.0';
 const SITE = 'https://cybersecinfo.com/';
@@ -24,16 +25,21 @@ const app = $('#app');
 let tab = 'home';
 
 // ---------- Abrir arquivos ----------
+// ensureUnlocked marca os bytes destravados com a senha usada; o editor protege de novo ao salvar
+const protectionOf = (bytes) => (bytes.password ? { password: bytes.password } : null);
+const EDITOR_MODES = { edittext: 'edit', forms: 'forms', redact: 'redact' };
 async function openFromDevice(mode = 'annotate') {
   const [file] = await pickFiles({ accept: 'application/pdf' });
   if (!file) return;
-  const bytes = new Uint8Array(await file.arrayBuffer());
-  await openEditor({ name: file.name, bytes, mode, onExit: render });
+  const bytes = await ensureUnlocked(new Uint8Array(await file.arrayBuffer()), file.name);
+  if (!bytes) return;
+  await openEditor({ name: file.name, bytes, mode, protection: protectionOf(bytes), onExit: render });
 }
 
 async function openFromLibrary(meta, mode = 'annotate') {
-  const bytes = await readDoc(meta);
-  await openEditor({ name: meta.name, id: meta.id, bytes, mode, onExit: render });
+  const bytes = await ensureUnlocked(await readDoc(meta), meta.name);
+  if (!bytes) return;
+  await openEditor({ name: meta.name, id: meta.id, bytes, mode, protection: protectionOf(bytes), onExit: render });
 }
 
 // Salva um PDF novo na biblioteca (juntar, imagens) e abre no editor
@@ -158,21 +164,11 @@ function filesView() {
   </div>`;
 }
 
-const TOOLS = [
-  ['annotate', 'highlighter', 'Anotar e marcar', 'Texto, marca-texto, caneta e tarja para cobrir.'],
-  ['sign', 'signature', 'Assinar documento', 'Desenhe sua assinatura e coloque no PDF.'],
-  ['pages', 'pages', 'Organizar páginas', 'Gire, exclua, reordene e adicione páginas.'],
-  ['merge', 'merge', 'Juntar PDFs', 'Junte vários PDFs em um só, na ordem que quiser.'],
-  ['images', 'images', 'Imagens em PDF', 'Transforme fotos e imagens em um PDF.'],
-];
-const SOON = [['shrink', 'Comprimir PDF'], ['scan', 'Reconhecer texto (OCR)'], ['word', 'Converter para Word']];
-
 function toolsView() {
   return `<div class="screen">
     <header class="plain-head"><h1>${t('Ferramentas')}</h1></header>
-    <div class="body">
-      <ul class="rows">${TOOLS.map(([id, ic, title, sub]) => `<li><button class="row" data-quick="${id}"><span class="row-ic">${icon(ic)}</span><span class="row-txt"><strong>${t(title)}</strong><small>${t(sub)}</small></span>${icon('chevronRight', { size: 20, cls: 'chev' })}</button></li>`).join('')}</ul>
-      <ul class="rows soon">${SOON.map(([ic, title]) => `<li><div class="row"><span class="row-ic">${icon(ic)}</span><span class="row-txt"><strong>${t(title)}</strong></span><span class="badge">${t('Em breve')}</span></div></li>`).join('')}</ul>
+    <div class="body">${TOOL_GROUPS.map(([group, items]) => `<h2 class="tool-group">${t(group)}</h2>
+      <ul class="rows">${items.map(([id, ic, title, sub]) => `<li><button class="row" data-quick="${id}"><span class="row-ic">${icon(ic)}</span><span class="row-txt"><strong>${t(title)}</strong><small>${t(sub)}</small></span>${icon('chevronRight', { size: 20, cls: 'chev' })}</button></li>`).join('')}</ul>`).join('')}
     </div>
   </div>`;
 }
@@ -234,7 +230,8 @@ app.addEventListener('click', async (e) => {
   const q = el.dataset.quick;
   if (q === 'merge') return mergeFlow();
   if (q === 'images') return imagesFlow();
-  if (q) return openFromDevice(q);
+  if (TOOL_ACTIONS[q]) return TOOL_ACTIONS[q]();
+  if (q) return openFromDevice(EDITOR_MODES[q] || q);
   const act = el.dataset.act;
   if (act === 'open') return openFromDevice();
   if (act === 'lang') { setLang(getLang() === 'pt' ? 'en' : 'pt'); render(); }
@@ -242,6 +239,7 @@ app.addEventListener('click', async (e) => {
 });
 
 // ---------- Início ----------
+setupTools({ openMeta: (meta) => openFromLibrary(meta), refresh: () => { if (!editorIsOpen()) render(); } });
 setLang(getLang());
 render();
 

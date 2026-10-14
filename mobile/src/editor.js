@@ -1,9 +1,10 @@
 // Tela do editor: páginas com rolagem, ferramentas de anotação/assinatura e o modo de organizar páginas.
 import { t, getLang } from './i18n.js';
 import { icon } from './icons.js';
-import { $, h, esc, sheet, confirmSheet, toast, busy, pickFiles, pagesLabel } from './ui.js';
-import { fabric } from './fabric-setup.js';
-import { loadPdf, isPasswordError, buildPdf, imagesToPdf, thumbnail } from './pdf.js';
+import { $, h, esc, sheet, confirmSheet, promptSheet, toast, busy, pickFiles, pagesLabel } from './ui.js';
+import { fabric, TEXT_BASELINE_RATIO } from './fabric-setup.js';
+import { loadPdf, isPasswordError, buildPdf, imagesToPdf, thumbnail, readForm, blankPdf } from './pdf.js';
+import { engine } from './engine.js';
 import { saveDoc, shareDoc } from './storage.js';
 import { chooseSignature } from './signature.js';
 
@@ -17,9 +18,22 @@ const MODES = {
     ['select', 'hand', 'Selecionar'],
     ['text', 'type', 'Texto'],
     ['highlight', 'highlighter', 'Marca-texto'],
+    ['underline', 'underline', 'Sublinhar'],
+    ['strike', 'strike', 'Riscar'],
     ['pen', 'pen', 'Caneta'],
-    ['cover', 'cover', 'Cobrir'],
+    ['shape', 'square', 'Formas'],
+    ['note', 'note', 'Nota'],
+    ['stamp', 'stamp', 'Carimbo'],
     ['image', 'image', 'Imagem'],
+    ['cover', 'cover', 'Cobrir'],
+    ['redact', 'redact', 'Tarjar'],
+    ['search', 'search', 'Buscar'],
+  ],
+  edit: [
+    ['edittext', 'edit', 'Editar frase'],
+    ['text', 'type', 'Texto novo'],
+    ['select', 'hand', 'Selecionar'],
+    ['search', 'search', 'Buscar'],
   ],
   sign: [
     ['select', 'hand', 'Selecionar'],
@@ -27,21 +41,52 @@ const MODES = {
     ['text', 'type', 'Texto'],
     ['date', 'calendar', 'Data'],
     ['x', 'x', 'Marcar X'],
+    ['stamp', 'stamp', 'Carimbo'],
+  ],
+  forms: [
+    ['fill', 'form', 'Preencher'],
+    ['field-text', 'type', 'Novo campo'],
+    ['field-check', 'check', 'Nova caixa'],
+    ['select', 'hand', 'Selecionar'],
   ],
 };
 const HINTS = {
   text: 'Toque na página para escrever',
   highlight: 'Arraste sobre o texto para marcar',
+  underline: 'Arraste sobre o texto para sublinhar',
+  strike: 'Arraste sobre o texto para riscar',
   pen: 'Desenhe com o dedo',
-  cover: 'Arraste para cobrir uma área',
+  cover: 'Arraste para cobrir (o que ficar embaixo é apagado ao salvar)',
+  redact: 'Arraste sobre o que deve sumir (é apagado de verdade ao salvar)',
+  note: 'Toque onde quer a nota',
+  edittext: 'Toque numa frase do PDF para editar',
+  fill: 'Toque num campo para preencher',
+  'field-text': 'Arraste para criar um campo de texto',
+  'field-check': 'Toque para criar uma caixa de marcar',
 };
+const SHAPES = [['rect', 'square', 'Retângulo'], ['ellipse', 'circle', 'Elipse'], ['line', 'line', 'Linha'], ['arrow', 'arrow', 'Seta']];
+const STAMPS = [
+  ['APROVADO', '#187434'], ['REPROVADO', '#b3261e'], ['PAGO', '#187434'], ['RECEBIDO', '#1c4a82'],
+  ['CONFIDENCIAL', '#b3261e'], ['URGENTE', '#b3261e'], ['CÓPIA', '#1c4a82'], ['RASCUNHO', '#6b7280'],
+];
+// Ferramentas de arrastar um retângulo (ver mouse:down)
+const DRAG_RECT = ['highlight', 'underline', 'strike', 'cover', 'redact', 'field-text'];
+// Propriedades extras gravadas em cada objeto
+const PROPS = ['kind', 'fieldName'];
+
+// Retângulo do PDF -> retângulo na tela [x0, y0, x1, y1] (o pdf.js 6 não tem mais convertToViewportRectangle)
+function vpRect(vp, [a, b, c, d]) {
+  const [x0, y0] = vp.convertToViewportPoint(a, b);
+  const [x1, y1] = vp.convertToViewportPoint(c, d);
+  return [Math.min(x0, x1), Math.min(y0, y1), Math.max(x0, x1), Math.max(y0, y1)];
+}
 
 let current = null; // há só um editor aberto por vez
 
 export function editorIsOpen() { return !!current; }
 export function editorBack() { current?.back(); }
 
-export async function openEditor({ name, id = null, bytes, mode = 'annotate', onExit }) {
+export async function openEditor({ name, id = null, bytes, mode = 'annotate', protection = null, onExit }) {
   const done = busy(t('Abrindo…'));
   let pdf;
   try {
@@ -53,12 +98,12 @@ export async function openEditor({ name, id = null, bytes, mode = 'annotate', on
   }
   done();
 
-  const doc = { name, id, sources: new Map([['s0', { bytes, pdf }]]), pages: [] };
+  const doc = { name, id, protection, sources: new Map([['s0', { bytes, pdf }]]), pages: [], formValues: new Map(), form: null };
   for (let i = 0; i < pdf.numPages; i++) doc.pages.push({ key: `s0:${i}`, src: 's0', index: i, rotate: 0, objects: [] });
   let srcCounter = 1;
 
-  const state = { mode, tool: 'select', zoom: 1, dirty: false, undo: [], redo: [], loading: false };
-  const colors = { text: TEXT_COLORS[0], pen: '#1c4a82', hl: HL_COLORS[0] };
+  const state = { mode: mode === 'redact' ? 'annotate' : mode, tool: 'select', zoom: 1, dirty: false, undo: [], redo: [], loading: false, shape: 'rect' };
+  const colors = { text: TEXT_COLORS[0], pen: '#1c4a82', hl: HL_COLORS[0], line: '#c8141c' };
 
   const root = h(`<section class="editor" aria-label="${esc(name)}">
     <header class="ed-top">
@@ -70,7 +115,9 @@ export async function openEditor({ name, id = null, bytes, mode = 'annotate', on
     </header>
     <div class="ed-modes" role="tablist">
       <button role="tab" data-mode="annotate">${icon('highlighter', { size: 18 })}<span>${t('Anotar')}</span></button>
+      <button role="tab" data-mode="edit">${icon('edit', { size: 18 })}<span>${t('Editar')}</span></button>
       <button role="tab" data-mode="sign">${icon('signature', { size: 18 })}<span>${t('Assinar')}</span></button>
+      <button role="tab" data-mode="forms">${icon('form', { size: 18 })}<span>${t('Campos')}</span></button>
       <button role="tab" data-mode="pages">${icon('pages', { size: 18 })}<span>${t('Páginas')}</span></button>
     </div>
     <div class="ed-scroll"><div class="ed-pages"></div></div>
@@ -128,7 +175,7 @@ export async function openEditor({ name, id = null, bytes, mode = 'annotate', on
       const vp = await viewportOf(p);
       const w = Math.round(bw);
       const hgt = Math.round((bw * vp.height) / vp.width);
-      const el = h(`<div class="pg" style="width:${w}px;height:${hgt}px"><canvas class="pg-img"></canvas><div class="pg-fab"></div><span class="pg-num">${doc.pages.indexOf(p) + 1}</span></div>`);
+      const el = h(`<div class="pg" style="width:${w}px;height:${hgt}px"><canvas class="pg-img"></canvas><div class="pg-fab"></div><div class="pg-form"></div><span class="pg-num">${doc.pages.indexOf(p) + 1}</span></div>`);
       el.dataset.key = p.key;
       pagesEl.append(el);
       views.set(p.key, { el, vp, w, h: hgt, rot: p.rotate, mounted: false });
@@ -174,6 +221,7 @@ export async function openEditor({ name, id = null, bytes, mode = 'annotate', on
     canvas.requestRenderAll();
     wireCanvas(key, canvas);
     applyToolTo(v);
+    renderFormLayer(key);
   }
 
   function unmount(key) {
@@ -196,7 +244,7 @@ export async function openEditor({ name, id = null, bytes, mode = 'annotate', on
     const v = views.get(key);
     const p = pageByKey(key);
     if (!v?.canvas || !p) return;
-    const after = v.canvas.toObject(['kind']).objects;
+    const after = v.canvas.toObject(PROPS).objects;
     state.undo.push({ type: 'page', key, before: p.objects, after });
     state.redo = [];
     p.objects = after;
@@ -249,19 +297,26 @@ export async function openEditor({ name, id = null, bytes, mode = 'annotate', on
   // ---------- Ferramentas ----------
   function renderTools() {
     if (state.mode === 'pages') {
-      toolsEl.innerHTML = `<button class="tool wide" data-page-add="pdf">${icon('file')}<span>${t('Adicionar PDF')}</span></button>
-        <button class="tool wide" data-page-add="img">${icon('images')}<span>${t('Adicionar imagem')}</span></button>`;
+      toolsEl.classList.remove('many');
+      toolsEl.innerHTML = `<button class="tool wide" data-page-add="pdf">${icon('file')}<span>${t('PDF')}</span></button>
+        <button class="tool wide" data-page-add="img">${icon('images')}<span>${t('Imagem')}</span></button>
+        <button class="tool wide" data-page-add="blank">${icon('plus')}<span>${t('Em branco')}</span></button>`;
       return;
     }
-    toolsEl.innerHTML = MODES[state.mode].map(([id, ic, label]) => `<button class="tool ${state.tool === id ? 'on' : ''}" data-tool="${id}">${icon(ic)}<span>${t(label)}</span></button>`).join('')
-      + (['text', 'pen', 'highlight'].includes(state.tool) ? `<button class="tool" data-tool-color aria-label="${t('Cor')}"><span class="dot big" style="--c:${toolColor()}"></span><span>${t('Cor')}</span></button>` : '');
+    const list = MODES[state.mode];
+    toolsEl.classList.toggle('many', list.length > 6);
+    const shapeIcon = SHAPES.find(([id]) => id === state.shape)[1];
+    toolsEl.innerHTML = (COLOR_TOOLS.includes(state.tool) ? `<button class="tool" data-tool-color aria-label="${t('Cor')}"><span class="dot big" style="--c:${toolColor()}"></span><span>${t('Cor')}</span></button>` : '')
+      + list.map(([id, ic, label]) => `<button class="tool ${state.tool === id ? 'on' : ''}" data-tool="${id}">${icon(id === 'shape' ? shapeIcon : ic)}<span>${t(label)}</span></button>`).join('');
   }
 
-  const toolColor = () => (state.tool === 'pen' ? colors.pen : state.tool === 'highlight' ? colors.hl : colors.text);
+  const COLOR_TOOLS = ['text', 'pen', 'highlight', 'underline', 'strike', 'shape', 'note'];
+  const toolColor = () => ({ pen: colors.pen, shape: colors.pen, highlight: colors.hl, underline: colors.line, strike: colors.line }[state.tool] || colors.text);
 
   // keep: canvas cujo objeto ativo deve continuar selecionado (ex.: texto recém-criado em edição)
   function setTool(tool, keep = null) {
     state.tool = tool;
+    root.dataset.tool = tool;
     for (const v of views.values()) {
       if (!v.canvas) continue;
       if (v.canvas !== keep) { v.canvas.discardActiveObject(); v.canvas.requestRenderAll(); }
@@ -286,7 +341,7 @@ export async function openEditor({ name, id = null, bytes, mode = 'annotate', on
     }
     const active = state.tool !== 'select' || !!c.getActiveObject();
     v.el.classList.toggle('live', active);
-    c.skipTargetFind = ['highlight', 'cover', 'text'].includes(state.tool);
+    c.skipTargetFind = state.tool !== 'select' && state.tool !== 'pen';
   }
 
   function wireCanvas(key, canvas) {
@@ -303,9 +358,10 @@ export async function openEditor({ name, id = null, bytes, mode = 'annotate', on
     canvas.on('selection:cleared', () => { hideSelbar(); applyToolTo(v); });
 
     let drag = null;
-    canvas.on('mouse:down', (e) => {
+    canvas.on('mouse:down', async (e) => {
       const pt = canvas.getScenePoint(e.e);
-      if (state.tool === 'text') {
+      const tool = state.tool;
+      if (tool === 'text') {
         const obj = new fabric.IText('', { left: pt.x, top: pt.y - 8, fontFamily: FONT, fontSize: 14, fill: colors.text, kind: 'text', editingBorderColor: '#c8141c', cursorColor: '#c8141c' });
         obj._creating = true;
         canvas.add(obj);
@@ -317,38 +373,121 @@ export async function openEditor({ name, id = null, bytes, mode = 'annotate', on
         showSelbar(key);
         return;
       }
-      if (state.tool === 'highlight' || state.tool === 'cover') {
-        const isHl = state.tool === 'highlight';
-        const rect = new fabric.Rect({
-          left: pt.x, top: pt.y, width: 1, height: 1,
-          fill: isHl ? colors.hl : '#ffffff', opacity: isHl ? 0.42 : 1, strokeWidth: 0,
-          kind: state.tool, selectable: true,
+      if (tool === 'note') {
+        const note = new fabric.Textbox('', {
+          left: pt.x, top: pt.y, width: 150, fontFamily: FONT, fontSize: 11, fill: colors.text, backgroundColor: '#fff3a8',
+          kind: 'note', editingBorderColor: '#c8141c', cursorColor: '#c8141c', splitByGrapheme: false,
         });
+        note._creating = true;
+        canvas.add(note);
+        note._creating = false;
+        canvas.setActiveObject(note);
+        setTool('select', canvas);
+        note.enterEditing();
+        note.hiddenTextarea?.focus();
+        showSelbar(key);
+        return;
+      }
+      if (tool === 'edittext') { await editTextAt(key, pt); return; }
+      if (tool === 'field-check') {
+        const name = await askFieldName('check');
+        if (!name) return;
+        const box = fieldBox({ left: pt.x - 7, top: pt.y - 7, width: 14, height: 14, kind: 'field-check', fieldName: name });
+        canvas.add(box);
+        return;
+      }
+      if (DRAG_RECT.includes(tool)) {
+        const look = {
+          highlight: { fill: colors.hl, opacity: 0.42 },
+          underline: { fill: colors.line, opacity: 0.35 },
+          strike: { fill: colors.line, opacity: 0.35 },
+          cover: { fill: '#ffffff', opacity: 1, stroke: '#9ca3af', strokeWidth: 0.6, strokeDashArray: [3, 2] },
+          redact: { fill: '#000000', opacity: 1 },
+          'field-text': { fill: 'rgba(28,74,130,0.08)', stroke: '#1c4a82', strokeWidth: 0.8, strokeDashArray: [4, 2] },
+        }[tool];
+        const rect = new fabric.Rect({ left: pt.x, top: pt.y, width: 1, height: 1, strokeWidth: 0, ...look, kind: tool, selectable: true });
         rect._creating = true;
         canvas.add(rect);
         drag = { rect, x: pt.x, y: pt.y };
+        return;
+      }
+      if (tool === 'shape') {
+        const style = { stroke: colors.pen, strokeWidth: 2, fill: '', kind: 'shape', strokeUniform: true };
+        const obj = state.shape === 'rect' ? new fabric.Rect({ left: pt.x, top: pt.y, width: 1, height: 1, ...style })
+          : state.shape === 'ellipse' ? new fabric.Ellipse({ left: pt.x, top: pt.y, rx: 0.5, ry: 0.5, ...style })
+            : new fabric.Line([pt.x, pt.y, pt.x, pt.y], { ...style, strokeLineCap: 'round' });
+        obj._creating = true;
+        canvas.add(obj);
+        drag = { shape: obj, x: pt.x, y: pt.y };
       }
     });
     canvas.on('mouse:move', (e) => {
       if (!drag) return;
       const pt = canvas.getScenePoint(e.e);
-      drag.rect.set({ left: Math.min(pt.x, drag.x), top: Math.min(pt.y, drag.y), width: Math.abs(pt.x - drag.x), height: Math.abs(pt.y - drag.y) });
+      if (drag.rect) {
+        drag.rect.set({ left: Math.min(pt.x, drag.x), top: Math.min(pt.y, drag.y), width: Math.abs(pt.x - drag.x), height: Math.abs(pt.y - drag.y) });
+      } else if (drag.shape.type === 'line') {
+        drag.shape.set({ x2: pt.x, y2: pt.y });
+        drag.end = pt;
+      } else if (drag.shape.type === 'ellipse') {
+        drag.shape.set({ left: Math.min(pt.x, drag.x), top: Math.min(pt.y, drag.y), rx: Math.abs(pt.x - drag.x) / 2, ry: Math.abs(pt.y - drag.y) / 2 });
+      } else {
+        drag.shape.set({ left: Math.min(pt.x, drag.x), top: Math.min(pt.y, drag.y), width: Math.abs(pt.x - drag.x), height: Math.abs(pt.y - drag.y) });
+      }
       canvas.requestRenderAll();
     });
-    canvas.on('mouse:up', () => {
+    canvas.on('mouse:up', async () => {
       if (!drag) return;
-      const { rect } = drag;
       const drag0 = drag;
       drag = null;
+      const discard = (o) => { state.loading = true; canvas.remove(o); state.loading = false; };
+      if (drag0.shape) {
+        const o = drag0.shape;
+        o._creating = false;
+        const end = drag0.end || { x: drag0.x, y: drag0.y };
+        const tiny = o.type === 'line' ? Math.hypot(end.x - drag0.x, end.y - drag0.y) < 6 : (o.width || o.rx * 2) < 4 && (o.height || o.ry * 2) < 4;
+        if (tiny) return discard(o);
+        if (state.shape === 'arrow') {
+          // Seta = linha + ponta, num único caminho
+          const ang = Math.atan2(end.y - drag0.y, end.x - drag0.x);
+          const L = 11;
+          const a1 = { x: end.x - L * Math.cos(ang - 0.45), y: end.y - L * Math.sin(ang - 0.45) };
+          const a2 = { x: end.x - L * Math.cos(ang + 0.45), y: end.y - L * Math.sin(ang + 0.45) };
+          const arrow = new fabric.Path(`M ${drag0.x} ${drag0.y} L ${end.x} ${end.y} M ${a1.x} ${a1.y} L ${end.x} ${end.y} L ${a2.x} ${a2.y}`,
+            { stroke: o.stroke, strokeWidth: 2, fill: '', strokeLineCap: 'round', strokeLineJoin: 'round', kind: 'shape' });
+          arrow._creating = true;
+          discard(o);
+          canvas.add(arrow);
+          arrow._creating = false;
+          arrow.setCoords();
+        } else o.setCoords();
+        commit(key);
+        return;
+      }
+      const { rect } = drag0;
       rect._creating = false;
-      if (rect.kind === 'highlight') {
+      if (['highlight', 'underline', 'strike'].includes(rect.kind)) {
         // Arrastar na horizontal (o gesto natural) marca uma linha inteira de texto
         if (rect.height < 11) rect.set({ height: 13, top: drag0.y - 6.5 });
         if (rect.width < 4) rect.set({ width: 120 });
+        if (rect.kind !== 'highlight') {
+          // traço fino: embaixo da linha (sublinhar) ou no meio (riscar)
+          const top = rect.kind === 'underline' ? rect.top + rect.height - 1.5 : rect.top + rect.height / 2 - 0.7;
+          rect.set({ top, height: 1.4, opacity: 1 });
+        }
       } else if (rect.width < 4 || rect.height < 3) {
-        state.loading = true; canvas.remove(rect); state.loading = false; return;
+        return discard(rect);
       }
       rect.setCoords();
+      if (rect.kind === 'field-text') {
+        const name = await askFieldName('text');
+        if (!name) return discard(rect);
+        state.loading = true;
+        canvas.remove(rect);
+        state.loading = false;
+        canvas.add(fieldBox({ left: rect.left, top: rect.top, width: rect.width, height: Math.max(rect.height, 12), kind: 'field-text', fieldName: name }));
+        return;
+      }
       commit(key);
     });
     canvas.on('path:created', (e) => { e.path.set({ kind: 'pen' }); });
@@ -383,8 +522,8 @@ export async function openEditor({ name, id = null, bytes, mode = 'annotate', on
     if (!obj) return hideSelbar();
     const isText = obj.type?.toLowerCase().includes('text');
     selbar.classList.toggle('is-text', isText);
-    const col = obj.kind === 'pen' ? obj.stroke : obj.fill;
-    $('[data-sel="color"]', selbar).hidden = obj.kind === 'cover' || obj.type === 'image';
+    const col = obj.kind === 'pen' || obj.kind === 'shape' ? obj.stroke : obj.fill;
+    $('[data-sel="color"]', selbar).hidden = ['cover', 'redact', 'stamp', 'signature', 'image', 'field-text', 'field-check'].includes(obj.kind) || obj.type === 'image';
     $('[data-sel="color"] .dot', selbar).style.setProperty('--c', typeof col === 'string' ? col : '#111827');
     selbar.hidden = false;
     hintEl.hidden = true;
@@ -400,7 +539,7 @@ export async function openEditor({ name, id = null, bytes, mode = 'annotate', on
     const act = b.dataset.sel;
     if (act === 'del') { canvas.remove(obj); canvas.discardActiveObject(); canvas.requestRenderAll(); hideSelbar(); }
     else if (act === 'dup') {
-      const copy = await obj.clone(['kind']);
+      const copy = await obj.clone(PROPS);
       copy.set({ left: obj.left + 12, top: obj.top + 12 });
       canvas.add(copy);
       canvas.setActiveObject(copy);
@@ -415,7 +554,7 @@ export async function openEditor({ name, id = null, bytes, mode = 'annotate', on
       const list = obj.kind === 'highlight' ? HL_COLORS : TEXT_COLORS;
       const col = await pickColor(list);
       if (!col) return;
-      if (obj.kind === 'pen') obj.set({ stroke: col }); else obj.set({ fill: col });
+      if (obj.kind === 'pen' || obj.kind === 'shape') obj.set({ stroke: col }); else obj.set({ fill: col });
       canvas.requestRenderAll();
       commit(key);
       showSelbar(key);
@@ -475,7 +614,10 @@ export async function openEditor({ name, id = null, bytes, mode = 'annotate', on
       const list = state.tool === 'highlight' ? HL_COLORS : TEXT_COLORS;
       const col = await pickColor(list);
       if (!col) return;
-      if (state.tool === 'pen') colors.pen = col; else if (state.tool === 'highlight') colors.hl = col; else colors.text = col;
+      if (state.tool === 'pen' || state.tool === 'shape') colors.pen = col;
+      else if (state.tool === 'highlight') colors.hl = col;
+      else if (state.tool === 'underline' || state.tool === 'strike') colors.line = col;
+      else colors.text = col;
       setTool(state.tool);
       return;
     }
@@ -494,6 +636,24 @@ export async function openEditor({ name, id = null, bytes, mode = 'annotate', on
       if (!file) return;
       const url = await new Promise((r) => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(file); });
       await addImageObject(url, 'image', 220);
+    } else if (tool === 'shape') {
+      const shape = await pickFrom(t('Formas'), SHAPES.map(([id, ic, label]) => [id, icon(ic, { size: 26 }), t(label)]));
+      if (!shape) return;
+      state.shape = shape;
+      setTool('shape');
+    } else if (tool === 'stamp') {
+      setTool('select');
+      const label = await pickFrom(t('Carimbo'), STAMPS.map(([text, color]) => [text, '', `<span class="stamp-chip" style="--c:${color}">${esc(t(text))}</span>`]));
+      if (!label) return;
+      const color = STAMPS.find(([x]) => x === label)[1];
+      await insertCentered(async () => {
+        const txt = new fabric.FabricText(t(label), { fontFamily: FONT, fontWeight: 'bold', fontSize: 20, fill: color, charSpacing: 80, originX: 'center', originY: 'center' });
+        const box = new fabric.Rect({ width: txt.width + 26, height: txt.height + 12, rx: 5, ry: 5, fill: 'rgba(255,255,255,0.01)', stroke: color, strokeWidth: 2.6, originX: 'center', originY: 'center' });
+        return new fabric.Group([box, txt], { kind: 'stamp', angle: -8, opacity: 0.9 });
+      });
+    } else if (tool === 'search') {
+      setTool('select');
+      await searchFlow();
     } else if (tool === 'date' || tool === 'x') {
       setTool('select');
       await insertCentered(async () => {
@@ -505,6 +665,178 @@ export async function openEditor({ name, id = null, bytes, mode = 'annotate', on
     }
   });
 
+  // Lista de opções num painel (ícone + rótulo); devolve o id escolhido
+  function pickFrom(title, items) {
+    return new Promise((resolve) => {
+      const s = sheet(`<div class="pick-grid">${items.map(([id, ic, label]) => `<button data-id="${esc(id)}">${ic}<span>${label}</span></button>`).join('')}</div>`,
+        { title, onClose: (v) => resolve(v || null) });
+      s.el.querySelectorAll('[data-id]').forEach((b) => b.addEventListener('click', () => s.close(b.dataset.id)));
+    });
+  }
+
+  // ---------- Campos de formulário novos ----------
+  function fieldBox({ left, top, width, height, kind, fieldName }) {
+    return new fabric.Rect({ left, top, width, height, fill: 'rgba(28,74,130,0.08)', stroke: '#1c4a82', strokeWidth: 0.8, strokeDashArray: [4, 2], kind, fieldName });
+  }
+
+  let fieldCount = 0;
+  async function askFieldName(type) {
+    const existing = new Set([...(doc.form?.fields || []).map((f) => f.name), ...doc.pages.flatMap((p) => p.objects.filter((o) => o.fieldName).map((o) => o.fieldName))]);
+    let n = ++fieldCount;
+    const prefix = type === 'check' ? t('caixa') : t('campo');
+    while (existing.has(`${prefix}${n}`)) n++;
+    const name = await promptSheet({ title: type === 'check' ? t('Nova caixa de marcar') : t('Novo campo de texto'), label: t('Nome do campo (aparece para quem preencher)'), value: `${prefix}${n}`, ok: t('Criar') });
+    if (!name) return null;
+    if (existing.has(name)) { toast(t('Já existe um campo com esse nome.'), 'error'); return null; }
+    return name;
+  }
+
+  // ---------- Texto original do PDF (editar frase e buscar) ----------
+  const textCache = new Map();
+  async function textItems(p) {
+    const k = `${p.src}:${p.index}:${p.rotate}`;
+    if (!textCache.has(k)) {
+      const pg = await pdfPage(p);
+      const vp = await viewportOf(p);
+      const tc = await pg.getTextContent();
+      const items = [];
+      for (const it of tc.items) {
+        if (!it.str?.trim()) continue;
+        const [, b, c, d, e, f] = it.transform;
+        if (Math.abs(b) > 0.01 || Math.abs(c) > 0.01) continue; // só texto na horizontal
+        const size = Math.abs(d) || it.height || 10;
+        const [x0, y0, x1, y1] = vpRect(vp, [e, f - size * 0.22, e + it.width, f + size * 0.9]);
+        const [bx, by] = vp.convertToViewportPoint(e, f);
+        const style = tc.styles[it.fontName] || {};
+        items.push({ str: it.str, size, left: Math.min(x0, x1), top: Math.min(y0, y1), right: Math.max(x0, x1), bottom: Math.max(y0, y1), baseX: bx, baseY: by, family: style.fontFamily || 'sans-serif' });
+      }
+      textCache.set(k, items);
+    }
+    return textCache.get(k);
+  }
+
+  async function editTextAt(key, pt) {
+    const p = pageByKey(key);
+    const canvas = views.get(key)?.canvas;
+    if (!p || !canvas) return;
+    const items = await textItems(p);
+    const hit = items.find((i) => pt.x >= i.left - 2 && pt.x <= i.right + 2 && pt.y >= i.top - 2 && pt.y <= i.bottom + 2);
+    if (!hit) return toast(t('Nenhum texto aqui. Toque em cima de uma frase.'));
+    const family = /serif/i.test(hit.family) && !/sans/i.test(hit.family) ? 'Times New Roman, serif' : /mono/i.test(hit.family) ? 'Courier New, monospace' : FONT;
+    state.loading = true;
+    // A cobertura apaga a frase original ao salvar (só o texto; linhas de tabela ficam)
+    const cover = new fabric.Rect({ left: hit.left - 1, top: hit.top, width: hit.right - hit.left + 2, height: hit.bottom - hit.top, fill: '#ffffff', strokeWidth: 0, kind: 'edit-cover', selectable: false, evented: false });
+    const text = new fabric.IText(hit.str, { left: hit.baseX, top: hit.baseY - hit.size * TEXT_BASELINE_RATIO, fontFamily: family, fontSize: hit.size, fill: '#111827', kind: 'text', editingBorderColor: '#c8141c', cursorColor: '#c8141c' });
+    canvas.add(cover);
+    canvas.add(text);
+    state.loading = false;
+    commit(key);
+    canvas.setActiveObject(text);
+    text.enterEditing();
+    text.selectAll();
+    text.hiddenTextarea?.focus();
+    showSelbar(key);
+  }
+
+  const fold = (x) => x.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  async function searchFlow() {
+    const q = await promptSheet({ title: t('Buscar no documento'), label: t('Palavra ou frase'), ok: t('Buscar') });
+    if (!q) return;
+    const needle = fold(q);
+    const stop = busy(t('Buscando…'));
+    const found = [];
+    try {
+      for (const [n, p] of doc.pages.entries()) {
+        for (const it of await textItems(p)) {
+          const hay = fold(it.str);
+          let i = hay.indexOf(needle);
+          while (i >= 0) {
+            const w = it.right - it.left;
+            found.push({ key: p.key, page: n + 1, text: it.str, left: it.left + (w * i) / hay.length, right: it.left + (w * (i + needle.length)) / hay.length, top: it.top, bottom: it.bottom });
+            i = hay.indexOf(needle, i + 1);
+          }
+        }
+      }
+    } finally { stop(); }
+    if (!found.length) return toast(t('Nada encontrado para "{q}".', { q }));
+    showHit(found[0]);
+    if (found.length === 1) return;
+    const s = sheet(`<p class="sheet-text">${esc(t('{n} resultado(s).', { n: found.length }))}</p>
+      <ul class="pick-list">${found.slice(0, 200).map((r, i) => `<li><button data-i="${i}"><span><strong>${esc(t('Página {n}', { n: r.page }))}</strong><small>${esc(r.text)}</small></span></button></li>`).join('')}</ul>`,
+    { title: t('Resultados') });
+    s.el.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-i]');
+      if (!b) return;
+      s.close();
+      showHit(found[Number(b.dataset.i)]);
+    });
+  }
+
+  function showHit(r) {
+    const v = views.get(r.key);
+    if (!v) return;
+    const k = v.w / v.vp.width;
+    pagesEl.querySelectorAll('.search-hit').forEach((x) => x.remove());
+    const mark = h(`<div class="search-hit" style="left:${r.left * k - 2}px;top:${r.top * k - 2}px;width:${(r.right - r.left) * k + 4}px;height:${(r.bottom - r.top) * k + 4}px"></div>`);
+    v.el.append(mark);
+    scroller.scrollTo({ top: Math.max(0, v.el.offsetTop + r.top * k - scroller.clientHeight / 3), left: Math.max(0, v.el.offsetLeft + r.left * k - 40), behavior: 'smooth' });
+    setTimeout(() => mark.remove(), 4000);
+  }
+
+  // ---------- Preencher formulário ----------
+  async function loadForm() {
+    if (doc.form) return doc.form;
+    const base = doc.sources.get('s0');
+    doc.form = { src: 's0', ...(await readForm(base.bytes)) };
+    return doc.form;
+  }
+
+  const fieldValue = (f) => (doc.formValues.has(f.name) ? doc.formValues.get(f.name) : f.value);
+
+  function renderFormLayer(key) {
+    const v = views.get(key);
+    const p = pageByKey(key);
+    const layer = v && $('.pg-form', v.el);
+    if (!layer) return;
+    layer.innerHTML = '';
+    if (!doc.form || p.src !== doc.form.src) return;
+    const k = v.w / v.vp.width;
+    for (const f of doc.form.fields) {
+      for (const w of f.widgets) {
+        if (w.index !== p.index) continue;
+        const [x0, y0, x1, y1] = vpRect(v.vp, w.rect);
+        const val = fieldValue(f);
+        let label = '';
+        if (f.type === 'check') label = val ? '✓' : '';
+        else if (f.type === 'radio') label = val && val === w.option ? '●' : '';
+        else label = String(val || '');
+        const el = h(`<button class="fld fld-${f.type}" style="left:${Math.min(x0, x1) * k}px;top:${Math.min(y0, y1) * k}px;width:${Math.abs(x1 - x0) * k}px;height:${Math.abs(y1 - y0) * k}px" ${f.readOnly ? 'disabled' : ''}></button>`);
+        el.textContent = label;
+        el.setAttribute('aria-label', f.name);
+        el.addEventListener('click', () => fillField(f, w));
+        layer.append(el);
+      }
+    }
+  }
+
+  const refreshFormLayers = () => { for (const [key, v] of views) if (v.mounted) renderFormLayer(key); };
+
+  async function fillField(f, w) {
+    let value;
+    if (f.type === 'check') value = !fieldValue(f);
+    else if (f.type === 'radio') value = w.option ?? f.options[0];
+    else if (f.type === 'dropdown' || f.type === 'list') {
+      value = await pickFrom(f.name, [['', '', `<span>${esc(t('(vazio)'))}</span>`], ...f.options.map((o) => [o, '', `<span>${esc(o)}</span>`])]);
+      if (value === null) return;
+    } else {
+      value = await promptSheet({ title: f.name, label: t('Valor do campo'), value: String(fieldValue(f) || ''), ok: t('OK') });
+      if (value === null) return;
+    }
+    doc.formValues.set(f.name, value);
+    markDirty();
+    refreshFormLayers();
+  }
+
   // ---------- Modo páginas ----------
   async function renderGrid() {
     gridEl.innerHTML = '';
@@ -515,6 +847,7 @@ export async function openEditor({ name, id = null, bytes, mode = 'annotate', on
         <div class="pacts">
           <button data-pa="left" aria-label="${t('Mover para a esquerda')}" ${i === 0 ? 'disabled' : ''}>${icon('chevronLeft', { size: 20 })}</button>
           <button data-pa="rotate" aria-label="${t('Girar')}">${icon('rotate', { size: 19 })}</button>
+          <button data-pa="dup" aria-label="${t('Duplicar')}">${icon('copy', { size: 19 })}</button>
           <button data-pa="del" aria-label="${t('Excluir')}" class="danger">${icon('trash', { size: 19 })}</button>
           <button data-pa="right" aria-label="${t('Mover para a direita')}" ${i === doc.pages.length - 1 ? 'disabled' : ''}>${icon('chevronRight', { size: 20 })}</button>
         </div>
@@ -554,7 +887,7 @@ export async function openEditor({ name, id = null, bytes, mode = 'annotate', on
       const c = o.getCenterPoint();
       o.rotate((o.angle + 90) % 360);
       o.setPositionByOrigin(new fabric.Point(vh - c.y, c.x), 'center', 'center');
-      return o.toObject(['kind']);
+      return o.toObject(PROPS);
     });
   }
 
@@ -572,6 +905,9 @@ export async function openEditor({ name, id = null, bytes, mode = 'annotate', on
       [doc.pages[i - 1], doc.pages[i]] = [doc.pages[i], doc.pages[i - 1]];
     } else if (act === 'right' && i < doc.pages.length - 1) {
       [doc.pages[i + 1], doc.pages[i]] = [doc.pages[i], doc.pages[i + 1]];
+    } else if (act === 'dup') {
+      const p = doc.pages[i];
+      doc.pages.splice(i + 1, 0, { ...p, key: `${p.src}:${p.index}:${Date.now().toString(36)}`, objects: [...p.objects] });
     } else if (act === 'rotate') {
       const p = { ...doc.pages[i] };
       const vp = await viewportOf(p);
@@ -586,7 +922,11 @@ export async function openEditor({ name, id = null, bytes, mode = 'annotate', on
 
   async function addPages(kind) {
     let bytes;
-    if (kind === 'pdf') {
+    if (kind === 'blank') {
+      const last = doc.pages[doc.pages.length - 1];
+      const vp = await viewportOf({ ...last, rotate: 0 });
+      bytes = await blankPdf(vp.width, vp.height);
+    } else if (kind === 'pdf') {
       const [file] = await pickFiles({ accept: 'application/pdf' });
       if (!file) return;
       bytes = new Uint8Array(await file.arrayBuffer());
@@ -613,6 +953,7 @@ export async function openEditor({ name, id = null, bytes, mode = 'annotate', on
   // ---------- Modos ----------
   async function setMode(m) {
     state.mode = m;
+    root.dataset.mode = m;
     root.querySelectorAll('[data-mode]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.mode === m)));
     const pages = m === 'pages';
     scroller.hidden = pages;
@@ -627,8 +968,12 @@ export async function openEditor({ name, id = null, bytes, mode = 'annotate', on
     } else {
       gridEl.innerHTML = '';
       const needLayout = views.size !== doc.pages.length || doc.pages.some((p, i) => pagesEl.children[i]?.dataset.key !== p.key || views.get(p.key)?.rot !== p.rotate);
-      setTool('select');
-      if (needLayout) await layout();
+      if (m === 'forms') {
+        await loadForm();
+        setTool('fill');
+        if (!doc.form.fields.length) toast(t('Este PDF não tem campos. Use "Novo campo" ou "Nova caixa" para criar.'));
+      } else setTool(m === 'edit' ? 'edittext' : 'select');
+      if (needLayout) await layout(); else refreshFormLayers();
     }
   }
 
@@ -689,9 +1034,11 @@ export async function openEditor({ name, id = null, bytes, mode = 'annotate', on
     const stop = busy(t('Salvando…'));
     let meta;
     try {
-      const bytes = await buildPdf(doc);
-      const saved = await loadPdf(bytes);
+      const plain = await buildPdf(doc);
+      const saved = await loadPdf(plain.slice());
       const thumb = await thumbnail(saved);
+      // PDF que veio com senha continua com a mesma senha
+      const bytes = doc.protection ? (await engine('finalize', { bytes: plain, encrypt: { user: doc.protection.password, owner: doc.protection.password } })).bytes : plain;
       meta = await saveDoc({ id: doc.id, name: doc.name, bytes, pages: saved.numPages, thumb });
       saved.loadingTask?.destroy?.();
       doc.id = meta.id;
@@ -746,5 +1093,6 @@ export async function openEditor({ name, id = null, bytes, mode = 'annotate', on
   current = { back };
   window.__editor = { doc, views, state }; // ajuda a depurar pelo WebView
   await layout();
-  await setMode(mode);
+  await setMode(state.mode);
+  if (mode === 'redact') setTool('redact');
 }

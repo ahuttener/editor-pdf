@@ -1,7 +1,8 @@
 // Leitura (pdf.js), gravação (pdf-lib) e as ferramentas de documento inteiro (juntar, imagens em PDF).
 import * as pdfjs from 'pdfjs-dist/build/pdf.min.mjs';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
-import { PDFDocument, PDFTextField, PDFCheckBox, StandardFonts, rgb, degrees, pushGraphicsState, popGraphicsState, concatTransformationMatrix } from 'pdf-lib';
+import { engine } from './engine.js';
+import { PDFDocument, PDFTextField, PDFCheckBox, PDFRadioGroup, PDFDropdown, PDFOptionList, StandardFonts, rgb, degrees, pushGraphicsState, popGraphicsState, concatTransformationMatrix } from 'pdf-lib';
 import { fabric, TEXT_BASELINE_RATIO, LINE_MULT } from './fabric-setup.js';
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
@@ -63,7 +64,7 @@ const RASTER_SCALE = 2.5; // ~180 dpi para caneta, marca-texto e imagens
 
 // Grava as anotações de uma página. Tudo é desenhado no espaço da página como ela aparece na tela
 // (já girada), com y para cima; a matriz leva esse espaço para o espaço do PDF.
-async function stampPage(outDoc, outPage, viewport, objects, font, fill = () => false) {
+async function stampPage(outDoc, outPage, viewport, objects, fontOf, fill = () => false) {
   if (!objects?.length) return;
   const W = viewport.width;
   const H = viewport.height;
@@ -71,7 +72,7 @@ async function stampPage(outDoc, outPage, viewport, objects, font, fill = () => 
 
   const texts = [];
   const raster = [];
-  const boxes = []; // tarja e marca-texto sem giro: retângulo vetorial (em PNG a borda fica com halo cinza)
+  const boxes = []; // tarjas, marca-texto e traços sem giro: retângulo vetorial (em PNG a borda fica com halo cinza)
   const toUser = (x, y) => [toPdf[0] * x + toPdf[2] * y + toPdf[4], toPdf[1] * x + toPdf[3] * y + toPdf[5]];
   // Texto escrito em cima de um campo de formulário preenche o campo (o campo é desenhado por cima do conteúdo)
   const live = await fabric.util.enlivenObjects(objects.filter((o) => o.type?.toLowerCase().includes('text') && o.text));
@@ -82,9 +83,10 @@ async function stampPage(outDoc, outPage, viewport, objects, font, fill = () => 
   });
   objects = objects.filter((o) => !filled.has(o.text + '|' + Math.round(o.left) + '|' + Math.round(o.top)));
   for (const o of objects) {
+    if (FIELD_KINDS.has(o.kind)) continue; // viram campos de formulário de verdade (buildPdf)
     if (o.type?.toLowerCase().includes('text') && o.text) {
-      try { font.encodeText(o.text.replace(/\n/g, '')); texts.push(o); } catch { raster.push(o); }
-    } else if ((o.kind === 'cover' || o.kind === 'highlight') && !(o.angle % 360) && typeof o.fill === 'string') boxes.push(o);
+      try { (await fontOf(o)).encodeText(o.text.replace(/\n/g, '')); texts.push(o); } catch { raster.push(o); }
+    } else if (BOX_KINDS.has(o.kind) && !(o.angle % 360) && typeof o.fill === 'string' && o.fill.startsWith('#')) boxes.push(o);
     else raster.push(o);
   }
 
@@ -120,7 +122,14 @@ async function stampPage(outDoc, outPage, viewport, objects, font, fill = () => 
       const size = obj.fontSize * obj.scaleY;
       const th = (obj.angle * Math.PI) / 180;
       const color = hexToRgb(typeof obj.fill === 'string' ? obj.fill : '#000000');
-      obj.text.split('\n').forEach((line, i) => {
+      const font = await fontOf(obj);
+      // Nota: fundo amarelo atrás do texto
+      if (obj.backgroundColor && !(obj.angle % 360)) {
+        const { br } = obj.aCoords;
+        outPage.drawRectangle({ x: tl.x, y: H - br.y, width: br.x - tl.x, height: br.y - tl.y, color: hexToRgb(obj.backgroundColor), borderWidth: 0 });
+      }
+      // textLines já traz as quebras automáticas da caixa de texto (nota)
+      (obj.textLines?.map((l) => (Array.isArray(l) ? l.join('') : l)) || obj.text.split('\n')).forEach((line, i) => {
         if (!line) return;
         const by = i * size * LINE_MULT * obj.lineHeight + size * TEXT_BASELINE_RATIO;
         const x = tl.x - Math.sin(th) * by;
@@ -155,21 +164,174 @@ function formWidgets(pdfDoc) {
   return list;
 }
 
+// Fontes padrão do PDF (não precisam ir dentro do arquivo), escolhidas pela família, negrito e itálico do texto
+function standardFonts(out) {
+  const cache = new Map();
+  return (obj) => {
+    const fam = String(obj.fontFamily || '');
+    const bold = obj.fontWeight === 'bold' || Number(obj.fontWeight) >= 600;
+    const italic = obj.fontStyle === 'italic';
+    const kind = /times|serif/i.test(fam) && !/sans/i.test(fam) ? 'times' : /courier|mono/i.test(fam) ? 'courier' : 'helv';
+    const name = {
+      helv: [StandardFonts.Helvetica, StandardFonts.HelveticaBold, StandardFonts.HelveticaOblique, StandardFonts.HelveticaBoldOblique],
+      times: [StandardFonts.TimesRoman, StandardFonts.TimesRomanBold, StandardFonts.TimesRomanItalic, StandardFonts.TimesRomanBoldItalic],
+      courier: [StandardFonts.Courier, StandardFonts.CourierBold, StandardFonts.CourierOblique, StandardFonts.CourierBoldOblique],
+    }[kind][(bold ? 1 : 0) + (italic ? 2 : 0)];
+    if (!cache.has(name)) cache.set(name, out.embedFont(name));
+    return cache.get(name);
+  };
+}
+
+// ---------- Formulários ----------
+const fieldType = (f) => (f instanceof PDFTextField ? 'text' : f instanceof PDFCheckBox ? 'check' : f instanceof PDFRadioGroup ? 'radio'
+  : f instanceof PDFDropdown ? 'dropdown' : f instanceof PDFOptionList ? 'list' : null);
+
+// Campos do PDF com valor atual, opções e o retângulo de cada widget (espaço do PDF) por página
+export async function readForm(bytes) {
+  let d;
+  try { d = await PDFDocument.load(bytes, { updateMetadata: false }); } catch { return { fields: [] }; }
+  let form;
+  try { form = d.getForm(); } catch { return { fields: [] }; }
+  const pages = d.getPages();
+  const fields = [];
+  for (const f of form.getFields()) {
+    const type = fieldType(f);
+    if (!type) continue;
+    let value = '';
+    let options = [];
+    try {
+      if (type === 'text') value = f.getText() || '';
+      else if (type === 'check') value = f.isChecked();
+      else if (type === 'radio') { value = f.getSelected() || ''; options = f.getOptions(); }
+      else { value = f.getSelected()?.[0] || ''; options = f.getOptions(); }
+    } catch {}
+    const widgets = [];
+    for (const w of f.acroField.getWidgets()) {
+      const r = w.getRectangle();
+      let index = pages.findIndex((pg) => pg.ref === w.P());
+      if (index < 0) {
+        const wRef = d.context.getObjectRef(w.dict);
+        index = pages.findIndex((pg) => pg.node.Annots()?.asArray().includes(wRef));
+      }
+      // Em grupos de opção, cada widget é uma opção (o valor "ligado" do widget)
+      let option = null;
+      if (type === 'radio') option = w.getOnValue?.()?.decodeText?.() ?? null;
+      if (index >= 0) widgets.push({ index, rect: [r.x, r.y, r.x + r.width, r.y + r.height], option });
+    }
+    fields.push({ name: f.getName(), type, value, options, readOnly: f.isReadOnly?.() || false, widgets });
+  }
+  return { fields };
+}
+
+function applyFormValues(out, values) {
+  let form;
+  try { form = out.getForm(); } catch { return; }
+  for (const [name, value] of values) {
+    const f = form.getFieldMaybe(name);
+    if (!f) continue;
+    try {
+      const type = fieldType(f);
+      if (type === 'text') f.setText(String(value));
+      else if (type === 'check') { if (value) f.check(); else f.uncheck(); }
+      else if (type === 'radio') { if (value) f.select(value); else f.clear(); }
+      else if (type === 'dropdown' || type === 'list') { if (value) f.select(value); else f.clear(); }
+    } catch (err) { console.warn('campo', name, err); }
+  }
+}
+
+// Campos criados no app (retângulos kind field-*) viram campos de formulário de verdade
+async function addNewFields(out, outPage, viewport, objects) {
+  const list = (objects || []).filter((o) => FIELD_KINDS.has(o.kind) && o.fieldName);
+  if (!list.length) return;
+  const form = out.getForm();
+  const toPdf = inv(viewport.transform);
+  for (const obj of await fabric.util.enlivenObjects(list)) {
+    obj.setCoords();
+    const pts = Object.values(obj.aCoords).map(({ x, y }) => [toPdf[0] * x + toPdf[2] * y + toPdf[4], toPdf[1] * x + toPdf[3] * y + toPdf[5]]);
+    const xs = pts.map((q) => q[0]);
+    const ys = pts.map((q) => q[1]);
+    const box = { x: Math.min(...xs), y: Math.min(...ys), width: Math.max(...xs) - Math.min(...xs), height: Math.max(...ys) - Math.min(...ys), borderWidth: 1 };
+    let name = obj.fieldName;
+    for (let n = 2; form.getFieldMaybe(name); n++) name = `${obj.fieldName} ${n}`;
+    if (obj.kind === 'field-check') form.createCheckBox(name).addToPage(outPage, box);
+    else {
+      const tf = form.createTextField(name);
+      tf.addToPage(outPage, box);
+      tf.setFontSize(0); // tamanho automático
+    }
+  }
+}
+
+export async function blankPdf(width = 595.28, height = 841.89) {
+  const d = await PDFDocument.create();
+  d.addPage([width, height]);
+  return d.save();
+}
+
 // doc: { sources: Map(id -> { bytes, pdf }), pages: [{ src, index, rotate, objects }] }
+// Tarja (preta) e cobrir (branca) apagam de verdade o que fica embaixo: texto, imagens e traços cobertos.
+// O motor apaga no PDF de origem; depois a tarja é desenhada por cima como as outras anotações.
+const REDACT_KINDS = { cover: 'all', redact: 'all', 'edit-cover': 'text' };
+const BOX_KINDS = new Set(['cover', 'redact', 'edit-cover', 'highlight', 'underline', 'strike']);
+const FIELD_KINDS = new Set(['field-text', 'field-check']);
+
+async function viewportOf(doc, p) {
+  const pdfjsPage = await doc.sources.get(p.src).pdf.getPage(p.index + 1);
+  return pdfjsPage.getViewport({ scale: 1, rotation: (pdfjsPage.rotate + p.rotate) % 360 });
+}
+
+// Devolve, para cada página, a chave do arquivo de origem e os bytes de cada chave (já com a redação aplicada)
+async function redactSources(doc) {
+  const keys = doc.pages.map((p) => p.src);
+  const bytes = new Map([...new Set(keys)].map((id) => [id, doc.sources.get(id).bytes]));
+  const uses = new Map();
+  doc.pages.forEach((p) => uses.set(`${p.src}:${p.index}`, (uses.get(`${p.src}:${p.index}`) || 0) + 1));
+  const jobs = new Map(); // chave -> [{ index, rects }]
+  for (const [i, p] of doc.pages.entries()) {
+    const boxes = (p.objects || []).filter((o) => REDACT_KINDS[o.kind] && o.visible !== false);
+    if (!boxes.length) continue;
+    const toPdf = inv((await viewportOf(doc, p)).transform);
+    const rects = [];
+    for (const obj of await fabric.util.enlivenObjects(boxes)) {
+      const mode = REDACT_KINDS[obj.kind];
+      // a cobertura de "Editar frase" é um pouco maior que a frase; encolhe para não pegar a linha vizinha
+      const w = obj.width / 2;
+      const hh = obj.height / 2 - (mode === 'text' ? obj.height * 0.14 : 0);
+      const m = obj.calcTransformMatrix();
+      const quad = [[-w, -hh], [w, -hh], [w, hh], [-w, hh]].flatMap(([x, y]) => {
+        const q = fabric.util.transformPoint(new fabric.Point(x, y), m);
+        return [toPdf[0] * q.x + toPdf[2] * q.y + toPdf[4], toPdf[1] * q.x + toPdf[3] * q.y + toPdf[5]];
+      });
+      rects.push({ quad, mode });
+    }
+    // Página usada mais de uma vez: a cópia com tarja ganha um arquivo só dela
+    let key = p.src;
+    if (uses.get(`${p.src}:${p.index}`) > 1) {
+      key = `${p.src}#${i}`;
+      keys[i] = key;
+      bytes.set(key, doc.sources.get(p.src).bytes);
+    }
+    if (!jobs.has(key)) jobs.set(key, []);
+    jobs.get(key).push({ index: p.index, rects });
+  }
+  for (const [key, pages] of jobs) bytes.set(key, (await engine('redact', { bytes: bytes.get(key).slice(), pages })).bytes);
+  return { keys, bytes };
+}
+
 export async function buildPdf(doc) {
-  const srcIds = [...new Set(doc.pages.map((p) => p.src))];
+  const { keys, bytes } = await redactSources(doc);
   const libDocs = new Map();
-  for (const id of srcIds) libDocs.set(id, await PDFDocument.load(doc.sources.get(id).bytes, { updateMetadata: false }));
+  for (const [key, b] of bytes) libDocs.set(key, await PDFDocument.load(b, { updateMetadata: false }));
 
   // Base = o primeiro arquivo; assim formulários, marcadores e metadados dele são preservados
-  const baseId = doc.pages[0].src;
+  const baseId = keys[0];
   const out = libDocs.get(baseId);
   const baseOriginal = out.getPages();
   const wanted = [];
-  for (const p of doc.pages) {
-    if (p.src === baseId) wanted.push(baseOriginal[p.index]);
+  for (const [i, p] of doc.pages.entries()) {
+    if (keys[i] === baseId) wanted.push(baseOriginal[p.index]);
     else {
-      const [copy] = await out.copyPages(libDocs.get(p.src), [p.index]);
+      const [copy] = await out.copyPages(libDocs.get(keys[i]), [p.index]);
       wanted.push(copy);
     }
   }
@@ -182,7 +344,8 @@ export async function buildPdf(doc) {
   for (let i = out.getPageCount() - 1; i >= 0; i--) out.removePage(i);
   for (const pg of wanted) out.addPage(pg);
 
-  const font = await out.embedFont(StandardFonts.Helvetica);
+  const fontOf = standardFonts(out);
+  if (doc.formValues?.size && doc.form?.src === doc.pages[0].src && keys[0] === doc.pages[0].src) applyFormValues(out, doc.formValues);
   const fields = formWidgets(out);
   for (let i = 0; i < doc.pages.length; i++) {
     const p = doc.pages[i];
@@ -203,7 +366,8 @@ export async function buildPdf(doc) {
       } catch {}
       return false;
     };
-    await stampPage(out, outPage, viewport, p.objects, font, fill);
+    await stampPage(out, outPage, viewport, p.objects, fontOf, fill);
+    await addNewFields(out, outPage, viewport, p.objects);
   }
   out.setProducer('Editor PDF (CyberSecInfo)');
   out.setModificationDate(new Date());

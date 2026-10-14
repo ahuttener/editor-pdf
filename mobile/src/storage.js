@@ -85,6 +85,26 @@ export async function shareDoc(meta) {
   await Share.share({ title: meta.name, files: [uri], dialogTitle: meta.name });
 }
 
+// Compartilha arquivos gerados na hora (Word, imagens, texto): [{ name, bytes, mime }]
+export async function shareFiles(files, title = '') {
+  if (!Capacitor.isNativePlatform()) {
+    for (const f of files) {
+      const url = URL.createObjectURL(new Blob([f.bytes], { type: f.mime }));
+      Object.assign(document.createElement('a'), { href: url, download: f.name }).click();
+      setTimeout(() => URL.revokeObjectURL(url), 4000);
+    }
+    return;
+  }
+  const stamp = Date.now().toString(36);
+  const uris = [];
+  for (const f of files) {
+    const path = `compartilhar/${stamp}/${f.name.replace(/[\\/:*?"<>|\u0000-\u001f]+/g, ' ')}`;
+    await Filesystem.writeFile({ path, data: toBase64(f.bytes), directory: Directory.Cache, recursive: true });
+    uris.push((await Filesystem.getUri({ path, directory: Directory.Cache })).uri);
+  }
+  await Share.share({ title: title || files[0].name, files: uris, dialogTitle: title || files[0].name });
+}
+
 export async function openExternal(url) {
   if (!/^https:\/\//.test(url)) return;
   if (Capacitor.isNativePlatform()) await Browser.open({ url });

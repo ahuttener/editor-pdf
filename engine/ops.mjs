@@ -5,10 +5,11 @@ import { PDFDocument, StandardFonts, PDFName, PDFHexString, PDFArray, PDFDict, d
 import fontkit from '@pdf-lib/fontkit';
 import { createWorker } from 'tesseract.js';
 import * as docx from 'docx';
-import fs from 'node:fs/promises';
 
-const config = { tessdata: null, tessCache: null, ocrFont: null, srgb: null };
+// readFile, tessWorker e tessCore permitem rodar o motor fora do Node (Web Worker do app mobile)
+const config = { tessdata: null, tessCache: null, ocrFont: null, srgb: null, readFile: null, tessWorker: null, tessCore: null, tessGzip: true, maxPixels: 60e6 };
 export function configure(values) { Object.assign(config, values); }
+const readFile = async (p) => (config.readFile ? config.readFile(p) : (await import('node:fs/promises')).readFile(p));
 
 const open = (bytes) => mupdf.Document.openDocument(bytes, 'application/pdf').asPDF();
 const save = (doc, options = '') => new Uint8Array(doc.saveToBuffer(options).asUint8Array());
@@ -160,6 +161,8 @@ export const ops = {
       const scale = safeScale(page, wanted);
       const pix = page.toPixmap(mupdf.Matrix.scale(scale, scale), mupdf.ColorSpace.DeviceRGB, false, true);
       out.push(format === 'jpg' ? new Uint8Array(pix.asJPEG(90, false)) : new Uint8Array(pix.asPNG()));
+      pix.destroy(); // a memória do WASM não encolhe: liberar cada imagem assim que usada
+      page.destroy();
     }
     return { images: out };
   },
@@ -198,8 +201,11 @@ export const ops = {
       for (const angle of [0, 90, 270, 180]) {
         const matrix = mupdf.Matrix.concat(mupdf.Matrix.scale(scale, scale), mupdf.Matrix.rotate(angle));
         const pix = page.toPixmap(matrix, mupdf.ColorSpace.DeviceRGB, false, true);
-        const { data } = await tess.recognize(Buffer.from(pix.asPNG()), {}, { blocks: true });
-        if (!best || data.confidence > best.data.confidence) best = { data, matrix, x: pix.getX(), y: pix.getY() };
+        const png = pix.asPNG();
+        const px = { x: pix.getX(), y: pix.getY() };
+        pix.destroy();
+        const { data } = await tess.recognize(typeof Buffer === 'function' ? Buffer.from(png) : png, {}, { blocks: true });
+        if (!best || data.confidence > best.data.confidence) best = { data, matrix, ...px };
         if (data.confidence >= 80) break;
       }
       const { data } = best;
@@ -219,6 +225,7 @@ export const ops = {
         words.push({ text: w.text, start: toUser(b.x0, base), end: toUser(b.x1, base), height: (b.y1 - b.y0) / scale });
       }
       found.push({ index, words });
+      page.destroy();
     }
     if (!found.length) return { bytes, pages: 0, words: 0 };
 
@@ -226,7 +233,7 @@ export const ops = {
     const out = await PDFDocument.load(bytes, { updateMetadata: false });
     out.registerFontkit(fontkit);
     let font;
-    try { font = await out.embedFont(await fs.readFile(config.ocrFont), { subset: true }); } catch { font = await out.embedFont(StandardFonts.Helvetica); }
+    try { font = await out.embedFont(await readFile(config.ocrFont), { subset: true }); } catch { font = await out.embedFont(StandardFonts.Helvetica); }
     let count = 0;
     for (const { index, words } of found) {
       const page = out.getPage(index);
@@ -272,7 +279,10 @@ export const ops = {
         const page = doc.loadPage(i);
         const [x0, y0, x1, y1] = page.getBounds();
         const scale = safeScale(page, 200 / 72);
-        const jpg = page.toPixmap(mupdf.Matrix.scale(scale, scale), mupdf.ColorSpace.DeviceRGB, false, true).asJPEG(85, false);
+        const pix = page.toPixmap(mupdf.Matrix.scale(scale, scale), mupdf.ColorSpace.DeviceRGB, false, true);
+        const jpg = pix.asJPEG(85, false);
+        pix.destroy();
+        page.destroy();
         const img = await out.embedJpg(jpg);
         out.addPage([x1 - x0, y1 - y0]).drawImage(img, { x: 0, y: 0, width: x1 - x0, height: y1 - y0 });
       }
@@ -330,7 +340,7 @@ export const ops = {
 <?xpacket end="w"?>`;
     const meta = out.context.stream(new TextEncoder().encode(xmp), { Type: 'Metadata', Subtype: 'XML' });
     out.catalog.set(PDFName.of('Metadata'), out.context.register(meta));
-    const icc = await fs.readFile(config.srgb);
+    const icc = await readFile(config.srgb);
     const iccRef = out.context.register(out.context.flateStream(icc, { N: 3 }));
     const intent = out.context.obj({
       Type: 'OutputIntent', S: 'GTS_PDFA1', OutputConditionIdentifier: PDFHexString.fromText('sRGB IEC61966-2.1'),
@@ -370,7 +380,7 @@ export const ops = {
       });
     }
     const out = new docx.Document({ title: title || 'Documento', creator: 'Editor PDF', sections });
-    return { bytes: new Uint8Array(await docx.Packer.toBuffer(out)) };
+    return { bytes: new Uint8Array(await docx.Packer.toArrayBuffer(out)) };
   },
 };
 let tesseract = null;
@@ -379,18 +389,18 @@ async function getTesseract() {
     tesseract = createWorker(['por', 'eng'], 1, {
       langPath: config.tessdata,
       cachePath: config.tessCache || undefined,
-      gzip: true,
+      gzip: config.tessGzip,
+      ...(config.tessWorker && { workerPath: config.tessWorker, corePath: config.tessCore, workerBlobURL: false }),
     });
   }
   return tesseract;
 }
 
-// Mantém cada imagem gerada abaixo de ~60 megapixels (páginas gigantes não estouram a memória)
-const MAX_PIXELS = 60e6;
+// Mantém cada imagem gerada abaixo de config.maxPixels (~60 megapixels no computador) (páginas gigantes não estouram a memória)
 function safeScale(page, wanted) {
   const [x0, y0, x1, y1] = page.getBounds();
   const area = Math.max(1, (x1 - x0) * (y1 - y0));
-  return Math.min(wanted, Math.sqrt(MAX_PIXELS / area));
+  return Math.min(wanted, Math.sqrt(config.maxPixels / area));
 }
 
 // Lista as fontes usadas que não têm o arquivo da fonte embutido

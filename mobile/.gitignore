@@ -6,3 +6,7 @@ android/build/
 ios/App/Pods/
 ios/App/build/
 public/pdfjs/
+public/engine/core/
+public/engine/tessdata/
+public/engine/tesseract-worker.min.js
+public/engine/LiberationSans-Regular.ttf
