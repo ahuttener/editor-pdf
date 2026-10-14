@@ -2,7 +2,13 @@
 
 # Editor PDF
 
-A complete PDF editor for **Android, iPhone, Windows, macOS and Linux** that works entirely on your device. No account, no ads, no tracking and no uploads — documents never leave the device.
+<p align="center">
+  <a href="LICENSE"><img alt="License: AGPL-3.0" src="https://img.shields.io/badge/license-AGPL--3.0-blue"></a>
+  <img alt="Open source" src="https://img.shields.io/badge/open%20source-yes-brightgreen">
+  <img alt="Platforms" src="https://img.shields.io/badge/platforms-Android%20%7C%20iOS%20%7C%20Windows%20%7C%20macOS%20%7C%20Linux-0b63d8">
+</p>
+
+A **free and open-source** PDF editor for **Android, iPhone, Windows, macOS and Linux** that works entirely on your device. No account, no ads, no tracking and no uploads — documents never leave the device.
 
 **Download:** [cybersecinfo.com/editor-pdf](https://cybersecinfo.com/editor-pdf/) · Coming soon to Google Play and the App Store · [Privacy policy](https://cybersecinfo.com/editor-pdf/privacy/)
 
