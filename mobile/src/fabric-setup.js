@@ -1,7 +1,7 @@
 // Configuração comum do fabric para toque.
 import * as fabric from 'fabric';
 
-fabric.FabricObject.customProperties = ['kind'];
+fabric.FabricObject.customProperties = ['kind', 'fieldName', 'editId'];
 // O fabric 7 usa o centro como origem; aqui trabalhamos com o canto superior esquerdo (como no desktop)
 fabric.FabricObject.ownDefaults.originX = 'left';
 fabric.FabricObject.ownDefaults.originY = 'top';

@@ -72,7 +72,7 @@ const STAMPS = [
 // Ferramentas de arrastar um retângulo (ver mouse:down)
 const DRAG_RECT = ['highlight', 'underline', 'strike', 'cover', 'redact', 'field-text'];
 // Propriedades extras gravadas em cada objeto
-const PROPS = ['kind', 'fieldName'];
+const PROPS = ['kind', 'fieldName', 'editId'];
 
 // Retângulo do PDF -> retângulo na tela [x0, y0, x1, y1] (o pdf.js 6 não tem mais convertToViewportRectangle)
 function vpRect(vp, [a, b, c, d]) {
@@ -342,7 +342,7 @@ export async function openEditor({ name, id = null, bytes, mode = 'annotate', pr
     }
     const active = state.tool !== 'select' || !!c.getActiveObject();
     v.el.classList.toggle('live', active);
-    c.skipTargetFind = state.tool !== 'select' && state.tool !== 'pen';
+    c.skipTargetFind = !['select', 'pen', 'edittext'].includes(state.tool);
   }
 
   function wireCanvas(key, canvas) {
@@ -351,7 +351,8 @@ export async function openEditor({ name, id = null, bytes, mode = 'annotate', pr
     canvas.on('object:modified', () => commit(key));
     canvas.on('object:removed', () => { if (!state.loading) commit(key); });
     canvas.on('text:editing:entered', () => keepVisibleSoon());
-    canvas.on('text:changed', () => keepVisible());
+    canvas.on('text:changed', (e) => { growCover(canvas, e.target); keepVisible(); });
+    canvas.on('object:resizing', (e) => growCover(canvas, e.target));
     canvas.on('text:editing:exited', (e) => {
       const obj = e.target;
       // texto apagado por inteiro: remove depois que o fabric termina de fechar a edição (removê-lo no meio quebra)
@@ -392,7 +393,11 @@ export async function openEditor({ name, id = null, bytes, mode = 'annotate', pr
         showSelbar(key);
         return;
       }
-      if (tool === 'edittext') { await editTextAt(key, pt); return; }
+      if (tool === 'edittext') {
+        if (e.target) return; // já é um texto editado: o fabric seleciona/edita/redimensiona
+        await editTextAt(key, pt, e.e);
+        return;
+      }
       if (tool === 'field-check') {
         const name = await askFieldName('check');
         if (!name) return;
@@ -762,7 +767,29 @@ export async function openEditor({ name, id = null, bytes, mode = 'annotate', pr
     } catch { return fallback; }
   }
 
-  async function editTextAt(key, pt) {
+  // A cobertura da frase acompanha o texto novo na largura (texto maior que o original)
+  function growCover(canvas, text) {
+    if (!text?.editId) return;
+    if (text.type === 'textbox' && text.isEditing) {
+      const v = [...views.values()].find((x) => x.canvas === canvas);
+      const maxW = Math.max(40, (v ? v.vp.width : 600) - text.left - 18);
+      const probe = new fabric.IText(text.text, { fontFamily: text.fontFamily, fontSize: text.fontSize, fontWeight: text.fontWeight, fontStyle: text.fontStyle, charSpacing: text.charSpacing });
+      const natural = probe.width + 4;
+      const w = Math.min(maxW, Math.max(text.width, natural));
+      if (Math.abs(w - text.width) > 0.5) { text.set({ width: w }); text.initDimensions?.(); }
+    }
+    const cover = canvas.getObjects().find((o) => o.kind === 'edit-cover' && o.editId === text.editId);
+    if (!cover) return;
+    text.setCoords();
+    const right = text.getBoundingRect().left + text.getBoundingRect().width + 2;
+    if (right > cover.left + cover.width) {
+      cover.set({ width: right - cover.left });
+      cover.setCoords();
+      canvas.requestRenderAll();
+    }
+  }
+
+  async function editTextAt(key, pt, ev) {
     const p = pageByKey(key);
     const canvas = views.get(key)?.canvas;
     if (!p || !canvas) return;
@@ -775,18 +802,32 @@ export async function openEditor({ name, id = null, bytes, mode = 'annotate', pr
     // Cores lidas da própria página: fundo (borda em volta da frase) e tinta (pixels mais escuros/contrastantes)
     const { bg, ink } = sampleColors(views.get(key), hit);
     const cover = new fabric.Rect({ left: hit.left - 2, top: hit.top - 1, width: hit.right - hit.left + 5, height: hit.bottom - hit.top + 2, fill: bg, strokeWidth: 0, kind: 'edit-cover', selectable: false, evented: false });
-    const text = new fabric.IText(hit.str, {
+    const editId = `e${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
+    cover.set({ editId });
+    // Caixa de texto: as alças dos lados mudam a largura e o texto quebra linha sozinho
+    const text = new fabric.Textbox(hit.str, {
       left: hit.baseX, top: hit.baseY - hit.size * TEXT_BASELINE_RATIO, fontFamily: family, fontSize: hit.size, fill: ink,
-      fontWeight: hit.bold ? 'bold' : 'normal', fontStyle: hit.italic ? 'italic' : 'normal', kind: 'text', editingBorderColor: '#0b63d8', cursorColor: '#0b63d8',
+      fontWeight: hit.bold ? 'bold' : 'normal', fontStyle: hit.italic ? 'italic' : 'normal', kind: 'text', editId,
+      editingBorderColor: '#0b63d8', cursorColor: '#0b63d8', cursorWidth: 2, splitByGrapheme: false,
     });
+    // largura inicial = a frase original (ou o texto medido, se for maior), para não quebrar linha de cara
+    text.set({ width: Math.max(hit.right - hit.left, text.calcTextWidth?.() || 0) + 4 });
+    text.setControlsVisibility({ mt: false, mb: false, mtr: false });
     canvas.add(cover);
     canvas.add(text);
     state.loading = false;
     commit(key);
     canvas.setActiveObject(text);
     text.enterEditing();
-    text.selectAll();
+    // cursor piscando no ponto tocado (sem selecionar tudo, que esconde o cursor)
+    let at = text.text.length;
+    try { if (ev) at = text.getSelectionStartFromPointer(ev); } catch {}
+    text.selectionStart = at;
+    text.selectionEnd = at;
     text.hiddenTextarea?.focus();
+    if (text.hiddenTextarea) text.hiddenTextarea.selectionStart = text.hiddenTextarea.selectionEnd = at;
+    text.initDelayedCursor?.(true);
+    canvas.requestRenderAll();
     showSelbar(key);
   }
 
