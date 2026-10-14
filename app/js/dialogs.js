@@ -286,7 +286,11 @@ export function aboutDialog(version) {
     el('img', { src: 'img/emblem.png', alt: 'CyberSecInfo' }),
     el('h3', { text: `Editor PDF ${version}` }),
     el('p', { class: 'muted', text: t('por CyberSecInfo — Information Security') }),
-    el('p', { class: 'brand-line', text: 'cybersecinfo.com · @cybersecinfo' }),
+    el('p', { class: 'brand-line' }, [
+      el('a', { href: 'https://cybersecinfo.com/', target: '_blank', rel: 'noopener', text: 'cybersecinfo.com' }),
+      ' · ',
+      el('a', { href: 'https://www.instagram.com/cyber_secinfo/', target: '_blank', rel: 'noopener', text: '@cyber_secinfo' }),
+    ]),
     el('p', { class: 'dialog-note', text: t('Usa componentes de código aberto: pdf.js (Apache-2.0), fabric.js (MIT), pdf-lib (MIT), MuPDF (AGPL-3.0), Tesseract (Apache-2.0), docx (MIT), Electron (MIT).') }),
   ]);
   return infoDialog('Sobre', null, body);
