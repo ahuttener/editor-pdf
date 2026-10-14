@@ -5,7 +5,7 @@ import { PDFDocument, PDFName, PDFString, StandardFonts, rgb, degrees, pushGraph
 import { t, getLang } from './i18n.js';
 import { $, esc, sheet, toast, busy, pickFiles, formSheet, formatSize, confirmSheet } from './ui.js';
 import { icon } from './icons.js';
-import { listDocs, readDoc, saveDoc, shareFiles } from './storage.js';
+import { listDocs, readDoc, saveDoc, shareFiles, printPdf } from './storage.js';
 import { engine } from './engine.js';
 import { loadPdf, thumbnail } from './pdf.js';
 
@@ -120,11 +120,13 @@ async function finishPdf(bytes, name, text, preview) {
     <div class="sheet-actions">
       <button class="btn btn-primary" data-act="open">${icon('edit', { size: 20 })} ${esc(t('Abrir no editor'))}</button>
       <button class="btn btn-secondary" data-act="share">${icon('share', { size: 20 })} ${esc(t('Compartilhar'))}</button>
+      <button class="btn btn-secondary" data-act="print">${icon('printer', { size: 20 })} ${esc(t('Imprimir'))}</button>
     </div>`);
   s.el.addEventListener('click', async (e) => {
     const act = e.target.closest('[data-act]')?.dataset.act;
     if (act === 'open') { s.close(); ctx.openMeta(meta); }
     if (act === 'share') { try { await shareFiles([{ name: meta.name, bytes, mime: 'application/pdf' }]); } catch {} }
+    if (act === 'print') { try { await printPdf(preview || bytes, meta.name); } catch { toast(t('Não foi possível imprimir.'), 'error'); } }
   });
 }
 

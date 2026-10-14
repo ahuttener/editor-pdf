@@ -1,0 +1,8 @@
+{
+  "name": "editorpdf-print",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Imprimir PDF pelo sistema (Android PrintManager / iOS UIPrintInteractionController)",
+  "main": "index.js",
+  "capacitor": { "ios": { "src": "ios" }, "android": { "src": "android" } }
+}

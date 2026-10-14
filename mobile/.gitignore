@@ -10,3 +10,4 @@ public/engine/core/
 public/engine/tessdata/
 public/engine/tesseract-worker.min.js
 public/engine/LiberationSans-Regular.ttf
+plugins/print/android/build/

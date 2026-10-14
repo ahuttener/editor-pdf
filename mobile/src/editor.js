@@ -5,7 +5,7 @@ import { $, h, esc, sheet, confirmSheet, promptSheet, toast, busy, pickFiles, pa
 import { fabric, TEXT_BASELINE_RATIO } from './fabric-setup.js';
 import { loadPdf, isPasswordError, buildPdf, imagesToPdf, thumbnail, readForm, blankPdf } from './pdf.js';
 import { engine } from './engine.js';
-import { saveDoc, shareDoc } from './storage.js';
+import { saveDoc, shareDoc, printPdf } from './storage.js';
 import { chooseSignature } from './signature.js';
 
 const TEXT_COLORS = ['#111827', '#c8141c', '#1c4a82', '#187434', '#7c3aed', '#ffffff'];
@@ -1024,6 +1024,7 @@ export async function openEditor({ name, id = null, bytes, mode = 'annotate', pr
   scroller.addEventListener('scroll', updatePageInd, { passive: true });
 
   // ---------- Salvar / sair ----------
+  let lastPlain = null; // última versão salva, sem senha (para imprimir)
   async function save() {
     for (const v of views.values()) {
       const obj = v.canvas?.getActiveObject();
@@ -1038,6 +1039,7 @@ export async function openEditor({ name, id = null, bytes, mode = 'annotate', pr
       const saved = await loadPdf(plain.slice());
       const thumb = await thumbnail(saved);
       // PDF que veio com senha continua com a mesma senha
+      lastPlain = plain;
       const bytes = doc.protection ? (await engine('finalize', { bytes: plain, encrypt: { user: doc.protection.password, owner: doc.protection.password } })).bytes : plain;
       meta = await saveDoc({ id: doc.id, name: doc.name, bytes, pages: saved.numPages, thumb });
       saved.loadingTask?.destroy?.();
@@ -1054,8 +1056,10 @@ export async function openEditor({ name, id = null, bytes, mode = 'annotate', pr
       <p class="sheet-text center"><strong>${t('Salvo na sua biblioteca')}</strong><br>${t('Use Compartilhar para mandar por WhatsApp, e-mail ou salvar em outra pasta.')}</p>
       <div class="sheet-actions">
         <button class="btn btn-primary" data-share>${icon('share', { size: 18 })}<span>${t('Compartilhar')}</span></button>
+        <button class="btn btn-secondary" data-print>${icon('printer', { size: 18 })}<span>${t('Imprimir')}</span></button>
         <button class="btn btn-secondary" data-ok>${t('OK')}</button>
       </div>`);
+    $('[data-print]', s.el).addEventListener('click', async () => { s.close(); try { await printPdf(lastPlain, doc.name); } catch { toast(t('Não foi possível imprimir.'), 'error'); } });
     $('[data-share]', s.el).addEventListener('click', async () => { s.close(); try { await shareDoc(meta); } catch {} });
     $('[data-ok]', s.el).addEventListener('click', () => s.close());
   }

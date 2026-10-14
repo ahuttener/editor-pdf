@@ -11,7 +11,7 @@ import { StatusBar, Style } from '@capacitor/status-bar';
 import { t, getLang, setLang } from './i18n.js';
 import { icon } from './icons.js';
 import { $, h, esc, sheet, confirmSheet, promptSheet, toast, busy, pickFiles, formatSize, formatWhen, pagesLabel } from './ui.js';
-import { listDocs, readDoc, deleteDoc, renameDoc, shareDoc, saveDoc, openExternal } from './storage.js';
+import { listDocs, readDoc, deleteDoc, renameDoc, shareDoc, saveDoc, openExternal, printPdf } from './storage.js';
 import { openEditor, editorIsOpen, editorBack } from './editor.js';
 import { mergePdfs, imagesToPdf, loadPdf, thumbnail } from './pdf.js';
 import { savedSignature, clearSignature } from './signature.js';
@@ -103,6 +103,7 @@ function emptyState() {
 async function docMenu(meta) {
   const s = sheet(`<ul class="menu">
     <li><button data-m="share">${icon('share')}<span>${t('Compartilhar')}</span></button></li>
+    <li><button data-m="print">${icon('printer')}<span>${t('Imprimir')}</span></button></li>
     <li><button data-m="sign">${icon('signature')}<span>${t('Assinar')}</span></button></li>
     <li><button data-m="pages">${icon('pages')}<span>${t('Organizar páginas')}</span></button></li>
     <li><button data-m="rename">${icon('type')}<span>${t('Renomear')}</span></button></li>
@@ -114,7 +115,10 @@ async function docMenu(meta) {
     s.close();
     const m = b.dataset.m;
     if (m === 'share') { try { await shareDoc(meta); } catch {} }
-    else if (m === 'sign') openFromLibrary(meta, 'sign');
+    else if (m === 'print') {
+      const bytes = await ensureUnlocked(await readDoc(meta), meta.name);
+      if (bytes) { try { await printPdf(bytes, meta.name); } catch { toast(t('Não foi possível imprimir.'), 'error'); } }
+    } else if (m === 'sign') openFromLibrary(meta, 'sign');
     else if (m === 'pages') openFromLibrary(meta, 'pages');
     else if (m === 'rename') {
       const name = await promptSheet({ title: t('Renomear'), label: t('Nome do arquivo'), value: meta.name.replace(/\.pdf$/i, '') });

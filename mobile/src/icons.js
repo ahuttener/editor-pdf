@@ -64,6 +64,7 @@ const P = {
   stamp: '<path d="M9 13V9.5a3 3 0 1 1 6 0V13"/><rect x="4" y="13" width="16" height="4" rx="1"/><path d="M5 21h14"/>',
   search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
   edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
+  printer: '<path d="M6 9V3h12v6"/><rect x="3" y="9" width="18" height="8" rx="2"/><path d="M6 14h12v7H6z"/>',
   form: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9h10M7 13h6"/><rect x="14" y="12" width="3" height="3" rx=".5"/>',
 };
 

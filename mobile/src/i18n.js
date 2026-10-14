@@ -61,6 +61,8 @@ const EN = {
   'Caneta': 'Pen',
   'Cobrir': 'Cover',
   'Imagem': 'Image',
+  'Imprimir': 'Print',
+  'Não foi possível imprimir.': 'Could not print.',
   'Cor': 'Color',
   'Assinatura': 'Signature',
   'Data': 'Date',

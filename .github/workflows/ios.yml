@@ -1,0 +1,48 @@
+name: App iOS
+
+# Compila o app de iPhone (Capacitor) para o simulador, sem assinatura, a cada mudança no app mobile.
+# O envio para a App Store fica num passo à parte, só depois do OK do dono.
+on:
+  push:
+    branches: [main]
+    paths: ['mobile/**', 'engine/**', '.github/workflows/ios.yml']
+  workflow_dispatch:
+
+jobs:
+  simulator:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            mobile/package-lock.json
+
+      # O app usa o motor do desktop (engine/ops.mjs) e os dados do OCR (vendor/tessdata)
+      - name: Dependências do motor
+        run: npm ci && node scripts/prepare-vendor.mjs
+
+      - name: Dependências do app
+        working-directory: mobile
+        run: npm ci
+
+      - name: Montar o app web e copiar para o iOS
+        working-directory: mobile
+        run: npm run build && npx cap sync ios
+
+      - name: Compilar para o simulador
+        working-directory: mobile/ios/App
+        run: |
+          xcodebuild -project App.xcodeproj -scheme App -configuration Debug \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build CODE_SIGNING_ALLOWED=NO build
+
+      - name: Guardar o app do simulador
+        uses: actions/upload-artifact@v4
+        with:
+          name: EditorPDF-simulador
+          path: mobile/ios/App/build/Build/Products/Debug-iphonesimulator/App.app
