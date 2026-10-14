@@ -1,0 +1,10 @@
+{
+  "appId": "com.cybersecinfo.editorpdf",
+  "appName": "Editor PDF",
+  "webDir": "dist",
+  "android": { "allowMixedContent": false },
+  "plugins": {
+    "SplashScreen": { "launchShowDuration": 900, "backgroundColor": "#c8141c", "showSpinner": false, "launchAutoHide": true },
+    "StatusBar": { "overlaysWebView": true, "style": "LIGHT" }
+  }
+}

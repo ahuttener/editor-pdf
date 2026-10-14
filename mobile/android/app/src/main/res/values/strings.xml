@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Editor PDF</string>
+    <string name="title_activity_main">Editor PDF</string>
+    <string name="package_name">com.cybersecinfo.editorpdf</string>
+    <string name="custom_url_scheme">com.cybersecinfo.editorpdf</string>
+</resources>
