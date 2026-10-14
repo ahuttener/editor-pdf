@@ -71,6 +71,7 @@ async function stampPage(outDoc, outPage, viewport, objects, font, fill = () => 
 
   const texts = [];
   const raster = [];
+  const boxes = []; // tarja e marca-texto sem giro: retângulo vetorial (em PNG a borda fica com halo cinza)
   const toUser = (x, y) => [toPdf[0] * x + toPdf[2] * y + toPdf[4], toPdf[1] * x + toPdf[3] * y + toPdf[5]];
   // Texto escrito em cima de um campo de formulário preenche o campo (o campo é desenhado por cima do conteúdo)
   const live = await fabric.util.enlivenObjects(objects.filter((o) => o.type?.toLowerCase().includes('text') && o.text));
@@ -83,10 +84,22 @@ async function stampPage(outDoc, outPage, viewport, objects, font, fill = () => 
   for (const o of objects) {
     if (o.type?.toLowerCase().includes('text') && o.text) {
       try { font.encodeText(o.text.replace(/\n/g, '')); texts.push(o); } catch { raster.push(o); }
-    } else raster.push(o);
+    } else if ((o.kind === 'cover' || o.kind === 'highlight') && !(o.angle % 360) && typeof o.fill === 'string') boxes.push(o);
+    else raster.push(o);
   }
 
   outPage.pushOperators(pushGraphicsState(), concatTransformationMatrix(...toPdf));
+
+  if (boxes.length) {
+    for (const obj of await fabric.util.enlivenObjects(boxes)) {
+      obj.setCoords();
+      const { tl, br } = obj.aCoords;
+      outPage.drawRectangle({
+        x: tl.x, y: H - br.y, width: br.x - tl.x, height: br.y - tl.y,
+        color: hexToRgb(obj.fill), opacity: obj.opacity ?? 1, borderWidth: 0,
+      });
+    }
+  }
 
   if (raster.length) {
     const el = document.createElement('canvas');
