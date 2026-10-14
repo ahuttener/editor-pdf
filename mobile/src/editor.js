@@ -349,6 +349,8 @@ export async function openEditor({ name, id = null, bytes, mode = 'annotate', pr
     canvas.on('object:added', (e) => { if (!state.loading && !e.target?._creating) commit(key); });
     canvas.on('object:modified', () => commit(key));
     canvas.on('object:removed', () => { if (!state.loading) commit(key); });
+    canvas.on('text:editing:entered', () => keepVisibleSoon());
+    canvas.on('text:changed', () => keepVisible());
     canvas.on('text:editing:exited', (e) => {
       const obj = e.target;
       if (obj && !obj.text.trim()) canvas.remove(obj); else commit(key);
@@ -1074,6 +1076,7 @@ export async function openEditor({ name, id = null, bytes, mode = 'annotate', pr
   }
 
   function close() {
+    stopKeyboardWatch();
     io?.disconnect();
     for (const key of [...views.keys()]) unmount(key);
     for (const s of doc.sources.values()) s.pdf.loadingTask?.destroy?.();
@@ -1093,6 +1096,38 @@ export async function openEditor({ name, id = null, bytes, mode = 'annotate', pr
     else if (act === 'undo') step(state.undo, state.redo, 'before');
     else if (act === 'redo') step(state.redo, state.undo, 'after');
   });
+
+  // ---------- Teclado ----------
+  // Com o teclado aberto a tela encolhe: some com as barras de baixo e rola até o texto em edição
+  let fullHeight = window.innerHeight;
+  function keepVisible() {
+    const obj = activeObj();
+    const v = selKey && views.get(selKey);
+    if (!obj || !v?.canvas) return;
+    const zoom = v.canvas.getZoom();
+    const pg = v.el.getBoundingClientRect();
+    const br = obj.getBoundingRect();
+    const top = pg.top + br.top * zoom;
+    const bottom = pg.top + (br.top + br.height) * zoom;
+    const area = scroller.getBoundingClientRect();
+    const covered = selbar.hidden ? 0 : selbar.getBoundingClientRect().height + 20;
+    const limit = area.bottom - covered - 16;
+    if (bottom > limit) scroller.scrollTop += bottom - limit;
+    else if (top < area.top + 12) scroller.scrollTop -= area.top + 12 - top;
+    const left = pg.left + br.left * zoom;
+    if (left < area.left || left > area.right - 40) scroller.scrollLeft += left - area.left - 24;
+  }
+  // o teclado abre com animação: confere de novo quando a tela termina de encolher
+  const keepVisibleSoon = () => { keepVisible(); setTimeout(keepVisible, 250); setTimeout(keepVisible, 600); };
+  const onResize = () => {
+    fullHeight = Math.max(fullHeight, window.innerHeight);
+    const open = window.innerHeight < fullHeight - 150;
+    root.classList.toggle('kbd', open);
+    if (open) keepVisibleSoon();
+  };
+  window.addEventListener('resize', onResize);
+  window.visualViewport?.addEventListener('resize', onResize);
+  const stopKeyboardWatch = () => { window.removeEventListener('resize', onResize); window.visualViewport?.removeEventListener('resize', onResize); };
 
   current = { back };
   window.__editor = { doc, views, state }; // ajuda a depurar pelo WebView

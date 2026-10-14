@@ -347,3 +347,7 @@ body.editing #app { visibility: hidden; }
 .pick-grid button { min-height: 64px; border: 1px solid var(--line); border-radius: var(--r); background: var(--white); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 10px; font-weight: 700; font-size: 13.5px; color: var(--ink); }
 .pick-grid button:active { background: var(--cream); }
 .stamp-chip { border: 2.5px solid var(--c); color: var(--c); border-radius: 6px; padding: 4px 10px; font-family: var(--f-title); font-weight: 800; letter-spacing: .08em; font-size: 13px; transform: rotate(-6deg); }
+
+/* Teclado aberto: só a página e a barra do texto selecionado */
+.editor.kbd .ed-tools, .editor.kbd .ed-modes, .editor.kbd .ed-hint, .editor.kbd .ed-pageind { display: none; }
+.editor.kbd .ed-float { bottom: 8px; }
