@@ -214,6 +214,7 @@ async function compress() {
   if (!v) return;
   const r = await task('Comprimindo…', () => engine('compress', { bytes: f.bytes.slice(), level: v.level }));
   if (!r) return;
+  if (r.bytes.length >= f.bytes.length) return toast(t('Este PDF já está otimizado; comprimir não o deixaria menor.'));
   const pct = Math.round((1 - r.bytes.length / f.bytes.length) * 100);
   const msg = `${formatSize(f.bytes.length)} → ${formatSize(r.bytes.length)} (${pct > 0 ? `−${pct}%` : t('já estava otimizado')})`;
   await finishPdf(r.bytes, `${baseName(f.name)}${t(' (comprimido)')}`, msg);

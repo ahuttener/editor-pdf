@@ -187,6 +187,7 @@ const EN = {
   'O PDF agora pede a senha para abrir. Guarde a senha: sem ela não há como abrir o arquivo.': 'The PDF now asks for the password to open. Keep the password safe: without it the file cannot be opened.',
   'Verificando…': 'Checking…',
   'Este PDF não tem senha.': 'This PDF has no password.',
+  'Este PDF já está otimizado; comprimir não o deixaria menor.': 'This PDF is already optimized; compressing would not make it smaller.',
   'Senha removida. O novo arquivo abre sem pedir senha.': 'Password removed. The new file opens without asking for a password.',
   'Limpando…': 'Cleaning…',
   'Este PDF tem só uma página.': 'This PDF has only one page.',
