@@ -18,6 +18,7 @@ export function loadPdfjsDocument(bytes) {
     iccUrl: PDFJS_BASE + 'iccs/',
     isEvalSupported: false,
     enableXfa: false,
+    fontExtraProperties: true, // nome real da fonte (negrito/itálico ao editar uma frase)
   }).promise;
 }
 

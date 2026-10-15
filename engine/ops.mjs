@@ -49,7 +49,7 @@ export const ops = {
     for (const { index, rects } of pages) {
       const page = doc.loadPage(index);
       const m = page.getTransform();
-      for (const mode of ['text', 'all']) {
+      for (const mode of ['text', 'art', 'all']) {
         const group = rects.filter((r) => r.mode === mode);
         if (!group.length) continue;
         for (const r of group) {
@@ -66,6 +66,9 @@ export const ops = {
         }
         if (mode === 'text') {
           page.applyRedactions(false, mupdf.PDFPage.REDACT_IMAGE_NONE, mupdf.PDFPage.REDACT_LINE_ART_NONE, mupdf.PDFPage.REDACT_TEXT_REMOVE);
+        } else if (mode === 'art') {
+          // palavra desenhada (letras em contorno): some o traço que fica inteiro dentro da área; fundo e imagens ficam
+          page.applyRedactions(false, mupdf.PDFPage.REDACT_IMAGE_NONE, mupdf.PDFPage.REDACT_LINE_ART_REMOVE_IF_COVERED, mupdf.PDFPage.REDACT_TEXT_REMOVE);
         } else {
           page.applyRedactions(false, mupdf.PDFPage.REDACT_IMAGE_PIXELS, mupdf.PDFPage.REDACT_LINE_ART_REMOVE_IF_COVERED, mupdf.PDFPage.REDACT_TEXT_REMOVE);
         }
@@ -258,6 +261,26 @@ export const ops = {
       }
     }
     return { bytes: await out.save({ useObjectStreams: true }), pages: found.length, words: count };
+  },
+
+  // OCR de um recorte (palavra desenhada que o usuário quer editar): linhas com caixa, linha de base e altura
+  async ocrImage({ png }) {
+    const tess = await getTesseract();
+    const { data } = await tess.recognize(typeof Buffer === 'function' ? Buffer.from(png) : png, {}, { blocks: true });
+    const lines = [];
+    for (const block of data.blocks || []) for (const para of block.paragraphs) for (const line of para.lines) {
+      const words = line.words.filter((w) => w.text.trim() && w.confidence >= 30);
+      if (!words.length) continue;
+      lines.push({
+        text: words.map((w) => w.text).join(' '),
+        bbox: line.bbox,
+        baseline: line.baseline,
+        rowHeight: line.rowAttributes?.row_height || 0,
+        confidence: line.confidence,
+        words: words.map((w) => ({ text: w.text, bbox: w.bbox })),
+      });
+    }
+    return { lines };
   },
 
   // Fontes sem o arquivo da fonte dentro do PDF (impedem um PDF/A válido)

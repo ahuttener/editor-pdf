@@ -708,6 +708,7 @@ export async function openEditor({ name, id = null, bytes, mode = 'annotate', pr
       const pg = await pdfPage(p);
       const vp = await viewportOf(p);
       const tc = await pg.getTextContent();
+      await pg.getOperatorList().catch(() => {}); // carrega as fontes (negrito/itálico); em cache se a página já foi desenhada
       const items = [];
       for (const it of tc.items) {
         if (!it.str?.trim()) continue;
@@ -767,6 +768,35 @@ export async function openEditor({ name, id = null, bytes, mode = 'annotate', pr
     } catch { return fallback; }
   }
 
+  // Onde a tinta da frase termina de verdade, lido na imagem da página: há PDFs em que a largura
+  // informada pelo pdf.js é menor que o desenho (medidas da fonte erradas) e sobrava o fim da frase
+  function inkRight(v, r, bgHex) {
+    const img = v && $('.pg-img', v.el);
+    if (!img?.width) return r.right;
+    try {
+      const k = img.width / v.vp.width;
+      const bg = [1, 3, 5].map((i) => parseInt(bgHex.slice(i, i + 2), 16));
+      const x0 = Math.floor(r.right * k);
+      const x1 = Math.min(img.width, Math.ceil((r.right + r.size * 4) * k));
+      const y0 = Math.max(0, Math.floor(r.top * k));
+      const hh = Math.min(img.height, Math.ceil(r.bottom * k)) - y0;
+      if (x1 - x0 < 2 || hh < 2) return r.right;
+      const data = img.getContext('2d', { willReadFrequently: true }).getImageData(x0, y0, x1 - x0, hh).data;
+      const gapMax = Math.max(2, Math.round(r.size * 0.5 * k)); // espaço entre palavras ainda é a mesma frase
+      let last = -1;
+      for (let x = 0, gap = 0; x < x1 - x0 && gap <= gapMax; x++) {
+        let n = 0;
+        for (let y = 0; y < hh; y++) {
+          const i = (y * (x1 - x0) + x) * 4;
+          if (Math.abs(data[i] - bg[0]) + Math.abs(data[i + 1] - bg[1]) + Math.abs(data[i + 2] - bg[2]) > 90) n++;
+        }
+        if (n >= hh - 1) break; // coluna pintada de cima a baixo = borda de tabela, não letra
+        if (n) { last = x; gap = 0; } else gap++;
+      }
+      return last < 0 ? r.right : (x0 + last + 1) / k + 1;
+    } catch { return r.right; }
+  }
+
   // A cobertura da frase acompanha o texto novo na largura (texto maior que o original)
   function growCover(canvas, text) {
     if (!text?.editId) return;
@@ -778,7 +808,7 @@ export async function openEditor({ name, id = null, bytes, mode = 'annotate', pr
       const w = Math.min(maxW, Math.max(text.width, natural));
       if (Math.abs(w - text.width) > 0.5) { text.set({ width: w }); text.initDimensions?.(); }
     }
-    const cover = canvas.getObjects().find((o) => o.kind === 'edit-cover' && o.editId === text.editId);
+    const cover = canvas.getObjects().find((o) => (o.kind === 'edit-cover' || o.kind === 'ocr-cover') && o.editId === text.editId);
     if (!cover) return;
     text.setCoords();
     const right = text.getBoundingRect().left + text.getBoundingRect().width + 2;
@@ -795,13 +825,75 @@ export async function openEditor({ name, id = null, bytes, mode = 'annotate', pr
     if (!p || !canvas) return;
     const items = await textItems(p);
     const hit = items.find((i) => pt.x >= i.left - 2 && pt.x <= i.right + 2 && pt.y >= i.top - 2 && pt.y <= i.bottom + 2);
-    if (!hit) return toast(t('Nenhum texto aqui. Toque em cima de uma frase.'));
+    if (!hit) return ocrEditAt(key, pt, ev); // sem texto de verdade: pode ser palavra desenhada (contorno)
     const family = /serif/i.test(hit.family) && !/sans/i.test(hit.family) ? 'Times New Roman, serif' : /mono/i.test(hit.family) ? 'Courier New, monospace' : FONT;
-    state.loading = true;
-    // A cobertura apaga a frase original ao salvar (só o texto; linhas de tabela ficam)
     // Cores lidas da própria página: fundo (borda em volta da frase) e tinta (pixels mais escuros/contrastantes)
     const { bg, ink } = sampleColors(views.get(key), hit);
-    const cover = new fabric.Rect({ left: hit.left - 2, top: hit.top - 1, width: hit.right - hit.left + 5, height: hit.bottom - hit.top + 2, fill: bg, strokeWidth: 0, kind: 'edit-cover', selectable: false, evented: false });
+    const inkEnd = inkRight(views.get(key), hit, bg);
+    startEdit(key, hit, ev, { family, bg, ink, kind: 'edit-cover', right: Math.max(hit.right, inkEnd) });
+  }
+
+  // Palavra desenhada (letras em contorno, sem texto no PDF): lê com OCR a linha tocada e abre a mesma edição.
+  // Ao salvar, o desenho das letras que fica dentro da área é apagado (fundo maior e imagens ficam) e a caixa é pintada por cima.
+  async function ocrEditAt(key, pt, ev) {
+    const p = pageByKey(key);
+    const v = views.get(key);
+    const stop = busy(t('Lendo o texto do desenho…'));
+    let line = null;
+    let band = null;
+    const S = 3; // ~216 dpi: suficiente para o OCR sem pesar no celular
+    try {
+      const pg = await pdfPage(p);
+      const top = Math.max(0, pt.y - 70);
+      const bottom = Math.min(v.vp.height, pt.y + 70);
+      const vp = pg.getViewport({ scale: S, rotation: (pg.rotate + p.rotate) % 360, offsetY: -top * S });
+      const c = document.createElement('canvas');
+      c.width = Math.round(v.vp.width * S);
+      c.height = Math.round((bottom - top) * S);
+      await pg.render({ canvasContext: c.getContext('2d', { willReadFrequently: true }), canvas: c, viewport: vp, annotationMode: 0 }).promise;
+      const png = new Uint8Array(await (await new Promise((r) => c.toBlob(r, 'image/png'))).arrayBuffer());
+      const { lines } = await engine('ocrImage', { png });
+      const tx = pt.x * S;
+      const ty = (pt.y - top) * S;
+      const near = (b) => Math.max(b.x0 - tx, 0, tx - b.x1) + Math.max(b.y0 - ty, 0, ty - b.y1);
+      line = lines.map((l) => ({ ...l, d: near(l.bbox) })).filter((l) => l.d <= 6 * S).sort((a, b) => a.d - b.d)[0] || null;
+      band = { c, top, S };
+    } catch (err) {
+      console.error(err);
+    } finally { stop(); }
+    if (!line) return toast(t('Nenhum texto aqui. Toque em cima de uma frase.'));
+    const { c, top } = band;
+    const b = line.bbox;
+    const base = line.baseline && line.baseline.y0 > b.y0 ? (line.baseline.y0 + line.baseline.y1) / 2 : b.y1 - (b.y1 - b.y0) * 0.2;
+    // tamanho da fonte pela altura das maiúsculas/ascendentes acima da linha de base (~73% do corpo)
+    const size = Math.max(4, (base - b.y0) / 0.73 / S);
+    // folga em volta da caixa do OCR: pingos dos "i" e bordas das letras escapavam
+    const pad = size * 0.08;
+    const hit = { str: line.text, size, left: b.x0 / S - pad, right: b.x1 / S + pad, top: b.y0 / S + top - pad, bottom: b.y1 / S + top + pad, baseX: b.x0 / S, baseY: base / S + top };
+    const { bg, ink } = sampleColors(v, hit);
+    hit.bold = inkDensity(c, b, bg) > 0.3;
+    startEdit(key, hit, ev, { family: FONT, bg, ink, kind: 'ocr-cover', right: hit.right });
+  }
+
+  // Fração de pixels de tinta na caixa da linha (letra grossa = negrito)
+  function inkDensity(c, b, bgHex) {
+    try {
+      const bg = [1, 3, 5].map((i) => parseInt(bgHex.slice(i, i + 2), 16));
+      const w = Math.max(1, Math.round(b.x1 - b.x0));
+      const hh = Math.max(1, Math.round(b.y1 - b.y0));
+      const data = c.getContext('2d', { willReadFrequently: true }).getImageData(Math.round(b.x0), Math.round(b.y0), w, hh).data;
+      let n = 0;
+      for (let i = 0; i < data.length; i += 4) if (Math.abs(data[i] - bg[0]) + Math.abs(data[i + 1] - bg[1]) + Math.abs(data[i + 2] - bg[2]) > 120) n++;
+      return n / (w * hh);
+    } catch { return 0; }
+  }
+
+  // Abre a edição de uma frase: cobertura com a cor do fundo + caixa de texto no lugar da original
+  function startEdit(key, hit, ev, { family, bg, ink, kind, right }) {
+    const canvas = views.get(key).canvas;
+    state.loading = true;
+    // A cobertura apaga a frase original ao salvar (só o texto; linhas de tabela ficam)
+    const cover = new fabric.Rect({ left: hit.left - 2, top: hit.top - 1, width: right - hit.left + 5, height: hit.bottom - hit.top + 2, fill: bg, strokeWidth: 0, kind, selectable: false, evented: false });
     const editId = `e${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
     cover.set({ editId });
     // Caixa de texto: as alças dos lados mudam a largura e o texto quebra linha sozinho
@@ -811,7 +903,11 @@ export async function openEditor({ name, id = null, bytes, mode = 'annotate', pr
       editingBorderColor: '#0b63d8', cursorColor: '#0b63d8', cursorWidth: 2, splitByGrapheme: false,
     });
     // largura inicial = a frase original (ou o texto medido, se for maior), para não quebrar linha de cara
-    text.set({ width: Math.max(hit.right - hit.left, text.calcTextWidth?.() || 0) + 4 });
+    // (medida numa linha só: a fonte de substituição costuma ser mais larga que a original)
+    const probe = new fabric.IText(hit.str, { fontFamily: family, fontSize: hit.size, fontWeight: text.fontWeight, fontStyle: text.fontStyle });
+    const maxW = Math.max(40, views.get(key).vp.width - text.left - 18);
+    text.set({ width: Math.min(maxW, Math.max(hit.right - hit.left, probe.width) + 4) });
+    text.initDimensions?.();
     text.setControlsVisibility({ mt: false, mb: false, mtr: false });
     canvas.add(cover);
     canvas.add(text);
@@ -819,6 +915,7 @@ export async function openEditor({ name, id = null, bytes, mode = 'annotate', pr
     commit(key);
     canvas.setActiveObject(text);
     text.enterEditing();
+    growCover(canvas, text);
     // cursor piscando no ponto tocado (sem selecionar tudo, que esconde o cursor)
     let at = text.text.length;
     try { if (ev) at = text.getSelectionStartFromPointer(ev); } catch {}

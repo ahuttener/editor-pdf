@@ -18,6 +18,7 @@ export function loadPdf(bytes) {
     iccUrl: ASSETS + 'iccs/',
     isEvalSupported: false,
     enableXfa: false,
+    fontExtraProperties: true, // nome real da fonte (negrito/itálico ao editar uma frase)
   }).promise;
 }
 
@@ -272,8 +273,8 @@ export async function blankPdf(width = 595.28, height = 841.89) {
 // doc: { sources: Map(id -> { bytes, pdf }), pages: [{ src, index, rotate, objects }] }
 // Tarja (preta) e cobrir (branca) apagam de verdade o que fica embaixo: texto, imagens e traços cobertos.
 // O motor apaga no PDF de origem; depois a tarja é desenhada por cima como as outras anotações.
-const REDACT_KINDS = { cover: 'all', redact: 'all', 'edit-cover': 'text' };
-const BOX_KINDS = new Set(['cover', 'redact', 'edit-cover', 'highlight', 'underline', 'strike']);
+const REDACT_KINDS = { cover: 'all', redact: 'all', 'edit-cover': 'text', 'ocr-cover': 'art' }; // ocr-cover: palavra desenhada (Editar frase via OCR)
+const BOX_KINDS = new Set(['cover', 'redact', 'edit-cover', 'ocr-cover', 'highlight', 'underline', 'strike']);
 const FIELD_KINDS = new Set(['field-text', 'field-check']);
 
 async function viewportOf(doc, p) {

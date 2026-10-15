@@ -261,6 +261,7 @@ const EN = {
   'Criar': 'Create',
   'Já existe um campo com esse nome.': 'A field with this name already exists.',
   'Nenhum texto aqui. Toque em cima de uma frase.': 'No text here. Tap on top of a sentence.',
+  'Lendo o texto do desenho…': 'Reading the text in the drawing…',
   'Buscar no documento': 'Search the document',
   'Palavra ou frase': 'Word or phrase',
   'Buscando…': 'Searching…',
