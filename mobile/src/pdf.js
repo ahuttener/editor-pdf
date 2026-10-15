@@ -6,6 +6,24 @@ import { PDFDocument, PDFTextField, PDFCheckBox, PDFRadioGroup, PDFDropdown, PDF
 import { fabric, TEXT_BASELINE_RATIO, LINE_MULT } from './fabric-setup.js';
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
+
+// O Safari (iPhone, até o iOS 26) não percorre ReadableStream com "for await", que o getTextContent do pdf.js usa:
+// sem isto, ler o texto da página dava erro e o "Editar frase" não fazia nada ao tocar.
+if (typeof ReadableStream !== 'undefined' && !ReadableStream.prototype[Symbol.asyncIterator]) {
+  ReadableStream.prototype[Symbol.asyncIterator] = async function* () {
+    const reader = this.getReader();
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) return;
+        yield value;
+      }
+    } finally {
+      reader.releaseLock();
+    }
+  };
+}
+
 const ASSETS = new URL('pdfjs/', document.baseURI).href;
 
 export function loadPdf(bytes) {
