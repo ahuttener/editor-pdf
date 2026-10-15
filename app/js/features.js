@@ -264,6 +264,7 @@ export function setupFeatures(ctx) {
       let out = (await api.engine('compress', { bytes, level: v.level })).bytes;
       const p = state.protection;
       if (p) out = (await api.engine('finalize', { bytes: out, encrypt: { user: p.user, owner: p.owner, permissions: p.permissions ?? permissionsFrom(p) } })).bytes;
+      if (out.length >= bytes.length && !state.selftest) return toast(t('Este PDF já está otimizado; comprimir não o deixaria menor.'));
       const result = await api.savePdf(out, { saveAs: true, title: t('Salvar PDF comprimido'), suggestedPath: ctx.suggestedPath(' (comprimido)'), selftestName: state.selftest ? 'comprimido.pdf' : undefined });
       if (!result) return;
       const pct = Math.round((1 - out.length / bytes.length) * 100);

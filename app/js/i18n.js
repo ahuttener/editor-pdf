@@ -251,6 +251,7 @@ const EN = {
   'Comprimindo…': 'Compressing…',
   'Salvar PDF comprimido': 'Save compressed PDF',
   'já estava otimizado': 'already optimized',
+  'Este PDF já está otimizado; comprimir não o deixaria menor.': 'This PDF is already optimized; compressing would not make it smaller.',
   'Reconhecendo texto…': 'Recognizing text…',
   'Texto reconhecido em {n} página(s) ({p} palavras). Agora dá para buscar, copiar e usar "Editar texto".': 'Text recognized on {n} page(s) ({p} words). You can now search, copy and use "Edit text".',
   'As páginas já tinham texto. Marque "Ler também páginas que já têm texto" para forçar.': 'The pages already had text. Tick "Also read pages that already have text" to force it.',
