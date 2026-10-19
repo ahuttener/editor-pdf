@@ -508,6 +508,7 @@ ipcMain.handle('test:config', async () => {
     image: await read('logo.png'),
     scan: await read('escaneado.pdf'),
     big: await read('grande.pdf'),
+    boxes: await read('caixinhas.pdf'),
   };
 });
 

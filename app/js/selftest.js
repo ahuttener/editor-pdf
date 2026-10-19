@@ -34,7 +34,7 @@ export async function runSelftest(ctx, cfg) {
   state.selftest = true;
   setLang(cfg.lang || 'pt');
   const report = { ok: false, steps: [] };
-  const step = (name, ok, info) => { report.steps.push({ name, ok: !!ok, info }); };
+  const step = (name, ok, info) => { report.steps.push({ name, ok: !!ok, info }); console.log(`[autoteste] ${ok ? 'ok' : 'FALHOU'} - ${name}`); };
 
   try {
     // ---------- abrir e editar ----------
@@ -224,6 +224,34 @@ export async function runSelftest(ctx, cfg) {
     await answerDialog({ password: 'abc' });
     await opening;
     step('abre PDF protegido de fora', state.pages.length === 2 && state.protection?.user === 'abc');
+
+    // ---------- formulário sem campos: caixinhas, caixa de marcar e linhas ----------
+    state.dirty = false;
+    await ctx.openFiles([cfg.boxes]);
+    await wait(300);
+    const bx = state.pages[0];
+    ctx.setTool('text');
+    const found = await ctx.ensureBoxes(bx);
+    const kinds = found.map((b) => b.type).sort().join(',');
+    step('acha caixinhas, caixa de marcar, caixa e linhas', kinds === 'check,comb,line,line,text', found.map((b) => `${b.type}:${b.key}`));
+    step('mostra as áreas clicáveis', bx.boxLayer.querySelectorAll('.box-hit').length === 5);
+    const comb = found.find((b) => b.type === 'comb');
+    await ctx.fillBox(bx, comb);
+    const name = bx.fabric.getActiveObject();
+    name.insertChars('JANAINA VIGGIANO');
+    ctx.onBoxTextChanged(bx, name);
+    step('caixinhas: uma letra por caixa, até o limite', name.text === 'JANAINA VI' && name.charSpacing > 0, name.text);
+    await wait(50);
+    if (bx.fabric.getActiveObject()?.isEditing) bx.fabric.getActiveObject().exitEditing();
+    await ctx.fillBox(bx, found.find((b) => b.type === 'check'));
+    const city = found.find((b) => b.type === 'line' && b.width > 150);
+    await ctx.fillBox(bx, city);
+    const cityText = bx.fabric.getActiveObject();
+    cityText.insertChars('Dublin');
+    cityText.exitEditing();
+    step('caixa de marcar e linha preenchidas', bx.fabric.getObjects().some((o) => o.text === 'X' && o.boxKey) && cityText.text === 'Dublin');
+    ctx.setTool('select');
+    step('salva o formulário preenchido', !!await ctx.save(false, 'caixinhas.pdf'));
 
     // ---------- tarja em página duplicada (só a cópia) ----------
     state.dirty = false;

@@ -72,3 +72,20 @@ for (let i = 1; i <= 40; i++) {
 }
 await fs.writeFile(path.join(dir, 'grande.pdf'), await big.save());
 console.log('Fixture extra: grande.pdf');
+
+// Formulário "chapado" (sem campos): caixinhas de uma letra, caixa de marcar, caixa com rótulo e linhas
+const boxes = await PDFDocument.create();
+const bf = await boxes.embedFont(StandardFonts.Helvetica);
+const bp = boxes.addPage([595, 842]);
+const black = rgb(0, 0, 0);
+bp.drawText('Nome:', { x: 72, y: 756, size: 11, font: bf });
+for (let i = 0; i < 10; i++) bp.drawRectangle({ x: 150 + i * 18, y: 750, width: 18, height: 20, borderColor: black, borderWidth: 0.6 });
+bp.drawRectangle({ x: 150, y: 715, width: 12, height: 12, borderColor: black, borderWidth: 0.6 });
+bp.drawText('Aceito os termos', { x: 170, y: 717, size: 11, font: bf });
+bp.drawRectangle({ x: 72, y: 600, width: 300, height: 70, borderColor: black, borderWidth: 0.6 });
+bp.drawText('Observações', { x: 76, y: 658, size: 9, font: bf });
+bp.drawText('Cidade:', { x: 72, y: 560, size: 11, font: bf });
+bp.drawLine({ start: { x: 120, y: 558 }, end: { x: 330, y: 558 }, thickness: 0.8, color: black });
+bp.drawText('Telefone: ____________________', { x: 72, y: 520, size: 11, font: bf });
+await fs.writeFile(path.join(dir, 'caixinhas.pdf'), await boxes.save());
+console.log('Fixture extra: caixinhas.pdf');

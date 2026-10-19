@@ -136,6 +136,11 @@ body.tool-edittext .page .text-hits, body.tool-editpara .page .text-hits { point
 .text-hit { position: absolute; border-radius: 2px; }
 body.tool-edittext .text-hit:hover, body.tool-editpara .text-hit:hover { background: rgba(31, 94, 255, .14); outline: 1px solid rgba(31, 94, 255, .55); }
 .search-layer { z-index: 4; }
+/* caixinhas e linhas de formulário sem campos: só os retângulos recebem clique */
+.page .box-hits { position: absolute; inset: 0; pointer-events: none; z-index: 6; }
+.box-hit { position: absolute; pointer-events: auto; cursor: text; border-radius: 2px; background: rgba(31, 94, 255, .07); outline: 1px dashed rgba(31, 94, 255, .45); }
+.box-hit.box-check { cursor: pointer; }
+.box-hit:hover { background: rgba(31, 94, 255, .16); outline: 1px solid rgba(31, 94, 255, .8); }
 .search-hit { position: absolute; background: rgba(255, 200, 0, .35); border-radius: 2px; }
 .diff-hit { position: absolute; background: rgba(198, 40, 40, .12); outline: 2px solid rgba(198, 40, 40, .7); border-radius: 2px; }
 .compare-list { max-height: 50vh; overflow: auto; white-space: pre-wrap; font: 12px/1.5 Consolas, ui-monospace, monospace; background: #f6f7f9; border-radius: 8px; padding: 10px; margin: 8px 0 0; user-select: text; }

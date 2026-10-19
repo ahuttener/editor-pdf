@@ -3,7 +3,7 @@ import { t, getLang } from './i18n.js';
 import { icon } from './icons.js';
 import { $, h, esc, sheet, confirmSheet, promptSheet, toast, busy, pickFiles, pagesLabel } from './ui.js';
 import { fabric, TEXT_BASELINE_RATIO } from './fabric-setup.js';
-import { loadPdf, isPasswordError, buildPdf, imagesToPdf, thumbnail, readForm, blankPdf } from './pdf.js';
+import { loadPdf, isPasswordError, buildPdf, imagesToPdf, thumbnail, readForm, blankPdf, pageBoxes } from './pdf.js';
 import { engine } from './engine.js';
 import { saveDoc, shareDoc, printPdf } from './storage.js';
 import { chooseSignature } from './signature.js';
@@ -11,6 +11,8 @@ import { chooseSignature } from './signature.js';
 const TEXT_COLORS = ['#111827', '#c8141c', '#1c4a82', '#187434', '#7c3aed', '#ffffff'];
 const HL_COLORS = ['#ffe14d', '#8ef07a', '#ff8ad8', '#7fd8ff'];
 const FONT = 'Helvetica, Arial, sans-serif';
+// ferramentas em que tocar numa caixinha/linha de formulário sem campos preenche ali
+const BOX_TOOLS = ['fill', 'text', 'edittext'];
 const PAD = 12; // margem lateral das páginas na tela
 
 const MODES = {
@@ -317,6 +319,7 @@ export async function openEditor({ name, id = null, bytes, mode = 'annotate', pr
   // keep: canvas cujo objeto ativo deve continuar selecionado (ex.: texto recém-criado em edição)
   function setTool(tool, keep = null) {
     state.tool = tool;
+    if (BOX_TOOLS.includes(tool) && doc.pages) setTimeout(preloadBoxes);
     root.dataset.tool = tool;
     for (const v of views.values()) {
       if (!v.canvas) continue;
@@ -351,7 +354,7 @@ export async function openEditor({ name, id = null, bytes, mode = 'annotate', pr
     canvas.on('object:modified', () => commit(key));
     canvas.on('object:removed', () => { if (!state.loading) commit(key); });
     canvas.on('text:editing:entered', () => keepVisibleSoon());
-    canvas.on('text:changed', (e) => { growCover(canvas, e.target); keepVisible(); });
+    canvas.on('text:changed', (e) => { growCover(canvas, e.target); keepVisible(); onBoxTextChanged(key, e.target); });
     canvas.on('object:resizing', (e) => growCover(canvas, e.target));
     canvas.on('text:editing:exited', (e) => {
       const obj = e.target;
@@ -366,6 +369,11 @@ export async function openEditor({ name, id = null, bytes, mode = 'annotate', pr
     canvas.on('mouse:down', async (e) => {
       const pt = canvas.getScenePoint(e.e);
       const tool = state.tool;
+      // formulário sem campos: tocar numa caixinha/linha preenche ali (as caixas já foram lidas, sem esperar: o iPhone só abre o teclado dentro do toque)
+      if (BOX_TOOLS.includes(tool) && !(tool === 'edittext' && e.target)) {
+        const box = boxAt(key, pt);
+        if (box) { fillBox(key, box); return; }
+      }
       if (tool === 'text') {
         const obj = new fabric.IText('', { left: pt.x, top: pt.y - 8, fontFamily: FONT, fontSize: 14, fill: colors.text, kind: 'text', editingBorderColor: '#0b63d8', cursorColor: '#0b63d8' });
         obj._creating = true;
@@ -698,6 +706,115 @@ export async function openEditor({ name, id = null, bytes, mode = 'annotate', pr
     if (!name) return null;
     if (existing.has(name)) { toast(t('Já existe um campo com esse nome.'), 'error'); return null; }
     return name;
+  }
+
+  // ---------- Formulário sem campos: caixinhas, caixas de marcar e linhas desenhadas ----------
+  const boxCache = new Map();
+  const boxCacheKey = (p) => `${p.src}:${p.index}:${p.rotate}`;
+  async function loadBoxes(p) {
+    const k = boxCacheKey(p);
+    if (!boxCache.has(k)) boxCache.set(k, (async () => { try { return await pageBoxes(await pdfPage(p), await viewportOf(p)); } catch { return []; } })().then((list) => { boxCache.set(k, list); return list; }));
+    return boxCache.get(k);
+  }
+  function boxesNow(p) {
+    const v = boxCache.get(boxCacheKey(p));
+    return Array.isArray(v) ? v : [];
+  }
+  function boxAt(key, pt) {
+    const p = pageByKey(key);
+    if (!p) return null;
+    const pad = 3;
+    return boxesNow(p).find((b) => pt.x >= b.left - pad && pt.x <= b.left + b.width + pad && pt.y >= b.top - pad && pt.y <= b.top + b.height + pad) || null;
+  }
+  const isFillBox = (b) => b.type !== 'check';
+  const COMB_FONT = 'Courier New, Courier, monospace';
+  const textHeight = (fs) => fs * fabric.IText.getDefaults()._fontSizeMult;
+
+  function fillBox(key, box, initial = '') {
+    const canvas = views.get(key)?.canvas;
+    if (!canvas) return;
+    const existing = canvas.getObjects().find((o) => o.boxKey === box.key);
+    if (box.type === 'check') {
+      if (existing) { canvas.remove(existing); canvas.requestRenderAll(); return; }
+      const mark = new fabric.IText('X', { fontFamily: FONT, fontSize: box.height * 0.95, fontWeight: 'bold', fill: colors.text, kind: 'text', boxKey: box.key });
+      mark.set({ left: box.left + (box.width - mark.width) / 2, top: box.top + (box.height - mark.height) / 2 + box.height * 0.05 });
+      canvas.add(mark);
+      canvas.requestRenderAll();
+      return;
+    }
+    if (existing) { if (initial) existing.set('text', existing.text + initial); editBoxText(key, canvas, existing); return; }
+    const look = { fill: colors.text, kind: 'text', boxKey: box.key, editingBorderColor: '#0b63d8', cursorColor: '#0b63d8' };
+    let obj;
+    if (box.type === 'comb') {
+      // uma letra por caixinha: fonte de largura fixa e espaçamento igual ao passo da grade
+      const fs = Math.min(box.height * 0.72, (box.pitch / 0.6) * 0.95);
+      obj = new fabric.IText('', { ...look, fontFamily: COMB_FONT, fontSize: fs });
+      obj.set('text', 'M');
+      obj.initDimensions();
+      const adv = obj.width; // largura real de uma letra na fonte que o aparelho usou
+      obj.set({ text: '', charSpacing: ((box.pitch - adv) / fs) * 1000, left: box.left + (box.pitch - adv) / 2, top: box.top + (box.height - textHeight(fs)) / 2 });
+    } else {
+      const fs = Math.max(6, Math.min(14, box.height * (box.type === 'line' ? 0.8 : 0.62)));
+      obj = new fabric.IText('', { ...look, fontFamily: FONT, fontSize: fs });
+      let top;
+      if (box.type === 'line') top = box.top + box.height - textHeight(fs);
+      else if (box.height > fs * 3.2) top = box.top + 4;
+      else top = box.top + (box.height - textHeight(fs)) / 2;
+      obj.set({ left: box.left + 3, top });
+    }
+    // texto que sobrou da caixa anterior entra antes de editar (a caixa de texto escondida do fabric copia o texto ao entrar)
+    if (initial) obj.set('text', initial);
+    obj._creating = true;
+    canvas.add(obj);
+    obj._creating = false;
+    editBoxText(key, canvas, obj);
+  }
+
+  function editBoxText(key, canvas, obj) {
+    canvas.setActiveObject(obj);
+    obj.enterEditing();
+    obj.hiddenTextarea?.focus();
+    obj.setSelectionStart(obj.text.length);
+    obj.setSelectionEnd(obj.text.length);
+    canvas.requestRenderAll();
+    showSelbar(key);
+  }
+
+  // "Próximo"/Enter do teclado passa para o próximo lugar; caixinhas têm limite de letras e o resto continua na próxima
+  function onBoxTextChanged(key, obj) {
+    if (!obj?.boxKey) return;
+    const p = pageByKey(key);
+    const box = p && boxesNow(p).find((b) => b.key === obj.boxKey);
+    if (!box) return;
+    const multiline = box.type === 'text' && box.height > obj.fontSize * 3.2;
+    let value = obj.text;
+    let advance = false;
+    if (!multiline && value.includes('\n')) { value = value.replace(/\n/g, ''); advance = true; }
+    let overflow = '';
+    if (box.type === 'comb' && value.length > box.cells.length) { overflow = value.slice(box.cells.length); value = value.slice(0, box.cells.length); advance = true; }
+    if (value !== obj.text) {
+      obj.set('text', value);
+      obj.setSelectionStart(value.length);
+      obj.setSelectionEnd(value.length);
+      views.get(key)?.canvas?.requestRenderAll();
+    }
+    if (!advance) return;
+    const list = boxesNow(p).filter(isFillBox);
+    const next = list[list.findIndex((b) => b.key === box.key) + 1];
+    // o que passou do limite só continua se a próxima for outra fileira de caixinhas (não vai parar na assinatura)
+    if (overflow && next?.type !== 'comb') return;
+    // o foco passa direto para a próxima caixa (sem fechar o teclado no meio)
+    if (next) setTimeout(() => {
+      fillBox(key, next, overflow);
+      const now = views.get(key)?.canvas?.getActiveObject();
+      if (overflow && now?.isEditing && now.boxKey === next.key) onBoxTextChanged(key, now);
+    }, 0);
+    else if (obj.isEditing) obj.exitEditing();
+  }
+
+  async function preloadBoxes() {
+    const list = await Promise.all(doc.pages.map((p) => loadBoxes(p)));
+    return list.reduce((n, l) => n + l.filter(isFillBox).length, 0);
   }
 
   // ---------- Texto original do PDF (editar frase e buscar) ----------
@@ -1161,7 +1278,10 @@ export async function openEditor({ name, id = null, bytes, mode = 'annotate', pr
       if (m === 'forms') {
         await loadForm();
         setTool('fill');
-        if (!doc.form.fields.length) toast(t('Este PDF não tem campos. Use "Novo campo" ou "Nova caixa" para criar.'));
+        if (!doc.form.fields.length) {
+          const n = await preloadBoxes();
+          toast(n ? t('Toque numa caixinha ou linha para escrever. Nas caixinhas vai uma letra em cada.') : t('Este PDF não tem campos. Use "Novo campo" ou "Nova caixa" para criar.'));
+        }
       } else setTool(m === 'edit' ? 'edittext' : 'select');
       if (needLayout) await layout(); else refreshFormLayers();
     }

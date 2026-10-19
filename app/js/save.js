@@ -198,8 +198,19 @@ async function drawText(page, obj, toPdf, pdfAngle, fontFor) {
     if (!line || !line.trim()) return;
     const offset = obj._getLineLeftOffset ? obj._getLineLeftOffset(i) : 0;
     const baseline = top + i * lineAdvance(obj) + obj.fontSize * TEXT_BASELINE_RATIO;
-    const p = toPdf(obj, left + offset, baseline);
-    page.drawText(encodableText(font, line), { x: p.x, y: p.y, size, font, color: colorInfo.color, opacity, rotate });
+    const bounds = obj.charSpacing ? obj.__charBounds?.[i] : null;
+    if (bounds) {
+      // com espaçamento entre letras (caixinhas de formulário) cada letra vai na posição que o fabric mediu
+      const chars = obj._textLines?.[i] || Array.from(line);
+      chars.forEach((ch, j) => {
+        if (!ch.trim() || !bounds[j]) return;
+        const pc = toPdf(obj, left + offset + bounds[j].left, baseline);
+        page.drawText(encodableText(font, ch), { x: pc.x, y: pc.y, size, font, color: colorInfo.color, opacity, rotate });
+      });
+    } else {
+      const p = toPdf(obj, left + offset, baseline);
+      page.drawText(encodableText(font, line), { x: p.x, y: p.y, size, font, color: colorInfo.color, opacity, rotate });
+    }
     if (obj.underline || obj.linethrough) {
       const width = obj.getLineWidth ? obj.getLineWidth(i) : 0;
       const thickness = Math.max(0.5, size * 0.06);

@@ -5,6 +5,7 @@ import { loadTextRuns, createTextEdit, renderTextHits, groupParagraphs, createPa
 import { askPassword, confirmDialog, choiceDialog, isDialogOpen } from './dialogs.js';
 import { setupFeatures } from './features.js';
 import { t, translateDom, setLang, getLang } from './i18n.js';
+import { detectBoxes } from './boxes.js';
 
 const api = window.api;
 const $ = (sel) => document.querySelector(sel);
@@ -15,6 +16,8 @@ const thumbsEl = $('#thumbs');
 const ZOOMS = [0.25, 0.33, 0.5, 0.67, 0.75, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4];
 const DRAG_TOOLS = ['whiteout', 'highlight', 'rect', 'redact', 'ellipse', 'line', 'arrow', 'underline', 'strike', 'field-text', 'field-check', 'field-list'];
 const CLICK_TOOLS = ['text', 'note', 'stamp'];
+// ferramentas em que as caixinhas e linhas de um formulário "chapado" ficam clicáveis
+const BOX_TOOLS = ['text', 'edittext', 'editpara'];
 const IMAGE_MIME = /^image\//;
 
 const state = {
@@ -131,8 +134,8 @@ function makeEntry(docKey, index, proxy) {
     proxy,
     baseRot: proxy.rotate || 0,
     extraRot: 0,
-    el: null, pdfCanvas: null, fabric: null, fabricHost: null, hitLayer: null, formLayer: null, searchLayer: null,
-    runs: null, renderTask: null, renderedKey: null, visible: false, lastJson: EMPTY_JSON, thumb: null,
+    el: null, pdfCanvas: null, fabric: null, fabricHost: null, hitLayer: null, boxLayer: null, formLayer: null, searchLayer: null,
+    runs: null, boxes: null, renderTask: null, renderedKey: null, visible: false, lastJson: EMPTY_JSON, thumb: null,
     thumbTask: null, thumbDone: false, materializing: null, hfStale: false,
     rotation() { return (this.baseRot + this.extraRot) % 360; },
     viewport(scale = 1) { return this.proxy.getViewport({ scale, rotation: this.rotation() }); },
@@ -201,13 +204,15 @@ function buildPageDom(entry) {
   searchLayer.className = 'search-layer';
   const hitLayer = document.createElement('div');
   hitLayer.className = 'text-hits';
+  const boxLayer = document.createElement('div');
+  boxLayer.className = 'box-hits';
   const formLayer = document.createElement('div');
   formLayer.className = 'form-layer';
   const label = document.createElement('div');
   label.className = 'page-label';
-  el.append(pdfCanvas, fabricHost, searchLayer, hitLayer, formLayer, label);
+  el.append(pdfCanvas, fabricHost, searchLayer, hitLayer, boxLayer, formLayer, label);
   pagesEl.append(el);
-  Object.assign(entry, { el, pdfCanvas, fabricHost, hitLayer, formLayer, searchLayer, label });
+  Object.assign(entry, { el, pdfCanvas, fabricHost, hitLayer, boxLayer, formLayer, searchLayer, label });
   if (!isLazy()) createFabric(entry);
   sizePage(entry);
   observer.observe(el);
@@ -294,6 +299,7 @@ function sizePage(entry) {
   renderFormLayer(entry, state.formFields, state.zoom, () => setDirty(true));
   if (isTextTool()) renderHits(entry);
   else entry.hitLayer.replaceChildren();
+  renderBoxes(entry);
   features?.renderSearch(entry);
   if (entry.visible) renderPage(entry);
 }
@@ -505,6 +511,7 @@ async function rotatePage(entry, dir) {
   state.suspend--;
   entry.extraRot = (entry.extraRot + 90 * dir + 360) % 360;
   entry.runs = null;
+  entry.boxes = null;
   // os passos de desfazer anteriores estão em coordenadas antigas
   state.history = state.history.filter((h) => h.id !== entry.id);
   state.redo = state.redo.filter((h) => h.id !== entry.id);
@@ -512,6 +519,7 @@ async function rotatePage(entry, dir) {
   sizePage(entry);
   refreshThumb(entry);
   if (isTextTool()) ensureRuns(entry);
+  if (BOX_TOOLS.includes(state.tool)) ensureBoxes(entry);
   features?.refreshHeaderFooter();
   setDirty(true);
   updateButtons();
@@ -569,6 +577,7 @@ async function replaceDocBytes(docKey, bytes) {
     entry.proxy = await pdf.getPage(entry.index + 1);
     entry.proxyVersion = (entry.proxyVersion || 0) + 1;
     entry.runs = null;
+    entry.boxes = null;
     entry.renderedKey = null;
     if (entry.visible) renderPage(entry);
     refreshThumb(entry);
@@ -729,6 +738,15 @@ async function openFilesNow(files) {
   }
 }
 
+// Formulário sem campos de verdade, mas com caixinhas/linhas desenhadas: oferece o preenchimento
+async function suggestBoxFilling() {
+  let n = 0;
+  for (const entry of state.pages.slice(0, 3)) n += (await ensureBoxes(entry)).filter(isFillBox).length;
+  if (n >= 2 && !BOX_TOOLS.includes(state.tool)) {
+    toast('Este PDF tem caixinhas e linhas para preencher.', false, { label: 'Preencher', run: () => setTool('text') });
+  }
+}
+
 async function openPdf(file) {
   let bytes = new Uint8Array(file.data);
   const unlocked = await unlockIfNeeded(bytes, file.name);
@@ -756,6 +774,7 @@ async function openPdf(file) {
   if (forms.fields.length) notes.push(t('{n} campo(s) de formulário para preencher', { n: forms.fields.length }));
   if (unlocked.protection) notes.push(t('a senha será mantida ao salvar'));
   if (notes.length) toast(t('Este PDF: {itens}.', { itens: notes.join('; ') }));
+  else suggestBoxFilling();
   return true;
 }
 
@@ -923,6 +942,17 @@ function wireCanvas(entry) {
     if (!target.text.trim()) removeObjects(entry, [target], { keepLinked: target.kind === 'edited' });
     else changed();
   });
+  canvas.on('text:changed', ({ target }) => onBoxTextChanged(entry, target));
+  canvas.on('text:editing:entered', ({ target }) => {
+    if (!target.boxKey || !target.hiddenTextarea) return;
+    // na captura: o fabric trata Tab como "sair da edição" e para o evento antes de nós
+    target.hiddenTextarea.addEventListener('keydown', (e) => {
+      if (e.key !== 'Tab') return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      goToNextBox(entry, target, e.shiftKey ? -1 : 1);
+    }, true);
+  });
   canvas.on('selection:created', () => onSelection(entry));
   canvas.on('selection:updated', () => onSelection(entry));
   canvas.on('selection:cleared', () => onSelection(entry));
@@ -1038,6 +1068,131 @@ function addText(entry, point, value = t('Texto')) {
   return text;
 }
 
+// ---------- preencher formulário sem campos (caixinhas e linhas desenhadas) ----------
+
+async function ensureBoxes(entry) {
+  if (!entry.boxes) {
+    const proxy = entry.proxy;
+    try {
+      const [opList, textContent] = await Promise.all([proxy.getOperatorList(), proxy.getTextContent()]);
+      if (entry.proxy !== proxy) return entry.boxes || [];
+      entry.boxes = detectBoxes({ opList, textContent, OPS: pdfjs.OPS, viewport: entry.viewport() });
+    } catch (err) { console.error(err); entry.boxes = []; }
+  }
+  renderBoxes(entry);
+  return entry.boxes;
+}
+
+function renderBoxes(entry) {
+  const layer = entry.boxLayer;
+  if (!layer) return;
+  layer.replaceChildren();
+  if (!BOX_TOOLS.includes(state.tool) || !entry.boxes) return;
+  const z = state.zoom;
+  for (const box of entry.boxes) {
+    const el = document.createElement('div');
+    el.className = `box-hit box-${box.type}`;
+    Object.assign(el.style, { left: `${box.left * z}px`, top: `${box.top * z}px`, width: `${box.width * z}px`, height: `${box.height * z}px` });
+    el.title = t(box.type === 'check' ? 'Clique para marcar ou desmarcar' : 'Clique para preencher');
+    el.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); fillBox(entry, box); });
+    layer.append(el);
+  }
+}
+
+const isFillBox = (b) => b.type !== 'check';
+const textHeight = (fs) => fs * fabric.IText.getDefaults()._fontSizeMult;
+
+async function fillBox(entry, box, initial = '') {
+  const canvas = entry.fabric || await materialize(entry);
+  const existing = canvas.getObjects().find((o) => o.boxKey === box.key);
+  if (box.type === 'check') {
+    if (existing) { removeObjects(entry, [existing]); return; }
+    const mark = new fabric.IText('X', { fontFamily: 'Arial', fontSize: box.height * 0.95, fontWeight: 'bold', fill: state.textStyle.fill, kind: 'text', uid: newUid(), boxKey: box.key });
+    mark.set({ left: box.left + (box.width - mark.width) / 2, top: box.top + (box.height - mark.height) / 2 + box.height * 0.05 });
+    addObjects(entry, [mark], { select: false });
+    return;
+  }
+  if (existing) { if (initial) existing.set('text', existing.text + initial); editBoxText(entry, existing); return; }
+  const s = state.textStyle;
+  let text;
+  if (box.type === 'comb') {
+    // uma letra por caixinha: fonte de largura fixa (0,6 em) e espaçamento igual ao passo da grade
+    const fs = Math.min(box.height * 0.72, (box.pitch / 0.6) * 0.95);
+    const adv = fs * 0.6;
+    text = new fabric.IText('', { fontFamily: 'Courier New', fontSize: fs, fill: s.fill, charSpacing: ((box.pitch - adv) / fs) * 1000, kind: 'text', uid: newUid(), boxKey: box.key });
+    text.set({ left: box.left + (box.pitch - adv) / 2, top: box.top + (box.height - textHeight(fs)) / 2 });
+  } else {
+    const fs = Math.max(6, Math.min(s.fontSize, box.height * (box.type === 'line' ? 0.8 : 0.62)));
+    text = new fabric.IText('', {
+      fontFamily: s.fontFamily, fontSize: fs, fill: s.fill,
+      fontWeight: s.bold ? 'bold' : 'normal', fontStyle: s.italic ? 'italic' : 'normal',
+      kind: 'text', uid: newUid(), boxKey: box.key,
+    });
+    let top;
+    if (box.type === 'line') top = box.top + box.height - textHeight(fs);
+    else if (box.height > fs * 3.2) top = box.top + 4;
+    else top = box.top + (box.height - textHeight(fs)) / 2;
+    text.set({ left: box.left + 3, top });
+  }
+  // texto que sobrou da caixa anterior entra antes de editar (a caixa de texto escondida do fabric copia o texto ao entrar)
+  if (initial) text.set('text', initial);
+  addObjects(entry, [text]);
+  editBoxText(entry, text);
+}
+
+function editBoxText(entry, text) {
+  entry.fabric.setActiveObject(text);
+  text.enterEditing();
+  text.setSelectionStart(text.text.length);
+  text.setSelectionEnd(text.text.length);
+  entry.fabric.requestRenderAll();
+}
+
+// Enter (fora das caixas grandes) passa para o próximo lugar; caixinhas têm limite de letras e o resto continua na próxima
+function onBoxTextChanged(entry, target) {
+  if (!target.boxKey) return;
+  const box = entry.boxes?.find((b) => b.key === target.boxKey);
+  if (!box) return;
+  const multiline = box.type === 'text' && box.height > target.fontSize * 3.2;
+  let value = target.text;
+  let advance = false;
+  if (!multiline && value.includes('\n')) { value = value.replace(/\n/g, ''); advance = true; }
+  let overflow = '';
+  if (box.type === 'comb' && value.length > box.cells.length) { overflow = value.slice(box.cells.length); value = value.slice(0, box.cells.length); advance = true; }
+  if (value !== target.text) {
+    target.set('text', value);
+    target.setSelectionStart(value.length);
+    target.setSelectionEnd(value.length);
+    entry.fabric.requestRenderAll();
+  }
+  if (!advance) return;
+  // o que passou do limite só continua se a próxima for outra fileira de caixinhas (não vai parar na assinatura)
+  if (overflow) {
+    const list = entry.boxes.filter(isFillBox);
+    if (list[list.findIndex((b) => b.key === box.key) + 1]?.type !== 'comb') return;
+  }
+  setTimeout(() => goToNextBox(entry, target, 1, overflow), 0);
+}
+
+async function goToNextBox(entry, current, dir, carry = '') {
+  if (current.isEditing) current.exitEditing();
+  let pageIdx = state.pages.indexOf(entry);
+  let list = (entry.boxes || []).filter(isFillBox);
+  let i = list.findIndex((b) => b.key === current.boxKey) + dir;
+  while (i < 0 || i >= list.length) {
+    pageIdx += dir;
+    const next = state.pages[pageIdx];
+    if (!next) return;
+    list = (await ensureBoxes(next)).filter(isFillBox);
+    i = dir > 0 ? 0 : list.length - 1;
+    entry = next;
+    if (list.length) entry.el.scrollIntoView({ block: 'nearest' });
+  }
+  await fillBox(entry, list[i], carry);
+  const text = entry.fabric.getActiveObject();
+  if (carry && text?.isEditing && text.boxKey === list[i].key) onBoxTextChanged(entry, text);
+}
+
 function visibleCenter(entry) {
   const pr = entry.el.getBoundingClientRect();
   const vr = viewerEl.getBoundingClientRect();
@@ -1124,7 +1279,7 @@ const HINTS = {
   select: 'Clique num item para mover, redimensionar ou excluir. Clique duas vezes num texto para editar.',
   edittext: 'Passe o mouse sobre o PDF e clique na frase que quer alterar.',
   editpara: 'Clique num parágrafo: ao editar, o texto se reorganiza nas linhas.',
-  text: 'Clique na página onde quer escrever.',
+  text: 'Clique na página onde quer escrever. Em formulários, clique numa caixinha ou linha para preencher (Tab passa para a próxima).',
   whiteout: 'Arraste sobre a área: o que estiver embaixo é apagado do PDF ao salvar.',
   redact: 'Arraste para tarjar: texto e imagens embaixo são removidos de verdade ao salvar.',
   highlight: 'Arraste sobre o trecho que quer destacar.',
@@ -1151,6 +1306,8 @@ function setTool(tool) {
     applyToolTo(entry);
     if (tool === 'edittext') ensureRuns(entry);
     else entry.hitLayer.replaceChildren();
+    if (BOX_TOOLS.includes(tool)) ensureBoxes(entry);
+    else entry.boxLayer.replaceChildren();
   }
   if (tool !== 'stamp') { state.pendingStamp = null; $('#stamp-select').value = ''; }
   $('#hint').textContent = t(HINTS[tool] || '');
@@ -1499,7 +1656,7 @@ const ctx = {
   state, api, fabric, PDFLib, t, toast, busy, setDirty, updateButtons, formatBytes, baseName, hasDoc,
   openFiles, openPdf, insertDocs, insertBlankPage, movePage, rotatePage, deletePages, duplicatePages, replaceDocBytes, targetPages,
   materialize, trimMemory, exclusive, addText, addImage, addImageFile, addObjects, removeObjects, makeShape, toEmbeddableImage, imagesToPdf,
-  snapshot, ensureRuns, onPickRun, onPickParagraph, pushHistory, undo, redo, save, buildFinal, suggestedPath, setZoom, setTool, setCurrent, fitWidth, renderPage, finishEditing,
+  snapshot, ensureRuns, ensureBoxes, fillBox, onBoxTextChanged, onPickRun, onPickParagraph, pushHistory, undo, redo, save, buildFinal, suggestedPath, setZoom, setTool, setCurrent, fitWidth, renderPage, finishEditing,
 };
 let features = null;
 

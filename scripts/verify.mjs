@@ -72,6 +72,18 @@ check('página extraída', extracted.getPageCount() === 1);
 const comp = new Uint8Array(await fs.readFile(path.join(dir, 'comprimido.pdf')));
 check('comprimido também com senha', ops.inspect({ bytes: comp }).needsPassword);
 
+// --- formulário sem campos: cada letra dentro da sua caixinha ---
+{
+  const pdf = await pdfjs.getDocument({ data: new Uint8Array(await fs.readFile(path.join(dir, 'caixinhas.pdf'))), isEvalSupported: false }).promise;
+  const tc = await (await pdf.getPage(1)).getTextContent();
+  const items = tc.items.filter((it) => it.str.trim()).map((it) => ({ str: it.str, x: it.transform[4], y: it.transform[5], w: it.width }));
+  const letters = [...'JANAINA VI'];
+  const placed = letters.map((ch, i) => ch === ' ' || items.some((it) => it.str === ch && it.x >= 150 + i * 18 && it.x + it.w <= 150 + (i + 1) * 18 && it.y > 750 && it.y < 770));
+  check('caixinhas: cada letra dentro da sua caixa', placed.every(Boolean), placed);
+  check('caixinhas: X dentro da caixa de marcar', items.some((it) => it.str === 'X' && it.x >= 149 && it.x + it.w <= 163 && it.y >= 713 && it.y <= 727));
+  check('caixinhas: texto sobre a linha', items.some((it) => it.str === 'Dublin' && it.x >= 120 && it.y > 558 && it.y < 572));
+}
+
 // --- tarja só na página duplicada ---
 const dup = await pageTexts(new Uint8Array(await fs.readFile(path.join(dir, 'duplicada.pdf'))));
 check('duplicada: original mantém o valor', dup[0]?.text.includes('1.000,00'), dup[0]?.text);

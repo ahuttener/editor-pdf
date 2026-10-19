@@ -4,6 +4,7 @@ import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { engine } from './engine.js';
 import { PDFDocument, PDFTextField, PDFCheckBox, PDFRadioGroup, PDFDropdown, PDFOptionList, StandardFonts, rgb, degrees, pushGraphicsState, popGraphicsState, concatTransformationMatrix } from 'pdf-lib';
 import { fabric, TEXT_BASELINE_RATIO, LINE_MULT } from './fabric-setup.js';
+import { detectBoxes } from '../../app/js/boxes.js';
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
 
@@ -152,6 +153,18 @@ async function stampPage(outDoc, outPage, viewport, objects, fontOf, fill = () =
       (obj.textLines?.map((l) => (Array.isArray(l) ? l.join('') : l)) || obj.text.split('\n')).forEach((line, i) => {
         if (!line) return;
         const by = i * size * LINE_MULT * obj.lineHeight + size * TEXT_BASELINE_RATIO;
+        const bounds = obj.charSpacing ? obj.__charBounds?.[i] : null;
+        if (bounds) {
+          // caixinhas de formulário: cada letra na posição medida pelo fabric (com o espaçamento entre letras)
+          (obj._textLines?.[i] || Array.from(line)).forEach((ch, j) => {
+            if (!ch.trim() || !bounds[j]) return;
+            const dx = bounds[j].left * obj.scaleX;
+            const cx = tl.x + Math.cos(th) * dx - Math.sin(th) * by;
+            const cy = tl.y + Math.sin(th) * dx + Math.cos(th) * by;
+            outPage.drawText(ch, { x: cx, y: H - cy, size, font, color, rotate: degrees(-obj.angle) });
+          });
+          return;
+        }
         const x = tl.x - Math.sin(th) * by;
         const y = tl.y + Math.cos(th) * by;
         outPage.drawText(line, { x, y: H - y, size, font, color, rotate: degrees(-obj.angle) });
@@ -207,6 +220,12 @@ const fieldType = (f) => (f instanceof PDFTextField ? 'text' : f instanceof PDFC
   : f instanceof PDFDropdown ? 'dropdown' : f instanceof PDFOptionList ? 'list' : null);
 
 // Campos do PDF com valor atual, opções e o retângulo de cada widget (espaço do PDF) por página
+// Caixinhas, caixas de marcar e linhas de um formulário "chapado" (sem campos), em coordenadas do viewport
+export async function pageBoxes(pg, viewport) {
+  const [opList, textContent] = await Promise.all([pg.getOperatorList(), pg.getTextContent()]);
+  return detectBoxes({ opList, textContent, OPS: pdfjs.OPS, viewport });
+}
+
 export async function readForm(bytes) {
   let d;
   try { d = await PDFDocument.load(bytes, { updateMetadata: false }); } catch { return { fields: [] }; }

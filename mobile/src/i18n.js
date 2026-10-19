@@ -273,6 +273,7 @@ const EN = {
   '(vazio)': '(empty)',
   'Valor do campo': 'Field value',
   'Este PDF não tem campos. Use "Novo campo" ou "Nova caixa" para criar.': 'This PDF has no fields. Use "New field" or "New box" to create one.',
+  'Toque numa caixinha ou linha para escrever. Nas caixinhas vai uma letra em cada.': 'Tap a box or line to type. In letter boxes, one character goes in each box.',
   'PDF': 'PDF',
   'Imagem': 'Image',
 };
