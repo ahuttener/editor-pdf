@@ -23,6 +23,7 @@ const EN = {
   'Não foi possível ler o texto deste PDF.': "Could not read this PDF's text.",
   'Este PDF parece ser uma imagem escaneada, sem texto para ler. Use o OCR na aba Ferramentas e tente de novo.': 'This PDF looks like a scanned image, with no text to read. Use OCR on the Tools tab and try again.',
   'Não há voz instalada para {idioma}; vou ler com a voz padrão.': 'No voice installed for {idioma}; using the default voice.',
+  'Não há voz instalada para {idioma}; instale a voz nas configurações do aparelho.': 'No voice installed for {idioma}; install it in your device settings.',
   'Documento muito longo: vou ler apenas o começo.': 'Document too long: reading only the beginning.',
   'Abra um PDF primeiro.': 'Open a PDF first.',
   // Voz: ditado por microfone
