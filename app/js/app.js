@@ -7,6 +7,7 @@ import { setupFeatures } from './features.js';
 import { setupAccessibility } from './accessibility.js';
 import { t, translateDom, setLang, getLang } from './i18n.js';
 import { detectBoxes } from './boxes.js';
+import { maybeShowDonation } from './donate.js';
 
 const api = window.api;
 const $ = (sel) => document.querySelector(sel);
@@ -1698,6 +1699,8 @@ async function start() {
   features.loadRecent();
   const initial = await api.initialFile();
   if (initial) await openFiles([initial]);
+  // Apoio (Buy Me a Coffee): sobe depois do splash, toda vez que abre o app.
+  setTimeout(maybeShowDonation, 1900);
 }
 
 start();
