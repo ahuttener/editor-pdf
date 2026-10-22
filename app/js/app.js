@@ -4,6 +4,7 @@ import { readFormFields, renderFormLayer } from './forms.js';
 import { loadTextRuns, createTextEdit, renderTextHits, groupParagraphs, createParagraphEdit } from './textedit.js';
 import { askPassword, confirmDialog, choiceDialog, isDialogOpen } from './dialogs.js';
 import { setupFeatures } from './features.js';
+import { setupAccessibility } from './accessibility.js';
 import { t, translateDom, setLang, getLang } from './i18n.js';
 import { detectBoxes } from './boxes.js';
 
@@ -1678,6 +1679,7 @@ async function start() {
     features.loadRecent();
     toast(getLang() === 'en' ? 'Language changed to English.' : 'Idioma alterado para português.');
   });
+  ctx.access = setupAccessibility(ctx);
   features = setupFeatures(ctx);
   setupEvents();
   setupPropbar();

@@ -431,6 +431,40 @@ const EN = {
   'Usa componentes de código aberto: pdf.js (Apache-2.0), fabric.js (MIT), pdf-lib (MIT), MuPDF (AGPL-3.0), Tesseract (Apache-2.0), docx (MIT), Electron (MIT).':
     'Uses open-source components: pdf.js (Apache-2.0), fabric.js (MIT), pdf-lib (MIT), MuPDF (AGPL-3.0), Tesseract (Apache-2.0), docx (MIT), Electron (MIT).',
   'Imagens.pdf': 'Images.pdf',
+
+  // ---------- acessibilidade por voz ----------
+  'Ler em voz alta': 'Read aloud',
+  'Ler o documento em voz alta, no idioma do texto (Alt+L)': "Read the document aloud, in the text's language (Alt+L)",
+  'Ditar': 'Dictate',
+  'Ditar por voz: fale e o texto é escrito no campo (Alt+D)': 'Voice dictation: speak and the text is typed into the field (Alt+D)',
+  'Este navegador não consegue ler em voz alta.': 'This browser cannot read aloud.',
+  'Preparando a leitura…': 'Preparing to read…',
+  'Este PDF parece ser uma imagem escaneada, sem texto para ler. Use "OCR (reconhecer texto)" na aba Documento e tente de novo.':
+    'This PDF looks like a scanned image, with no text to read. Use "OCR (recognize text)" on the Document tab and try again.',
+  'PDF sem texto para ler.': 'PDF has no text to read.',
+  'Não há voz instalada para o idioma detectado ({idioma}). Vou ler com a voz padrão.':
+    'No voice is installed for the detected language ({idioma}). I will read with the default voice.',
+  'Lendo o documento em {idioma}.': 'Reading the document in {idioma}.',
+  'Documento muito longo: li apenas o começo.': 'Document is very long: I read only the beginning.',
+  'Leitura concluída.': 'Reading finished.',
+  'Leitura interrompida.': 'Reading stopped.',
+  'Continuando a leitura.': 'Resuming reading.',
+  'Leitura pausada.': 'Reading paused.',
+  'O ditado por voz não está disponível neste aplicativo. Use o microfone do teclado, ou a versão no navegador Chrome.':
+    'Voice dictation is not available in this app. Use the keyboard microphone, or the version in the Chrome browser.',
+  'Permissão de microfone negada ou indisponível neste aplicativo.': 'Microphone permission denied or unavailable in this app.',
+  'Não ouvi nada. Tente de novo.': "I didn't hear anything. Try again.",
+  'O ditado falhou ({erro}).': 'Dictation failed ({erro}).',
+  'Ditado ligado. Fale e o texto será escrito.': 'Dictation on. Speak and the text will be typed.',
+  'Ditado ligado. Clique de novo em "Ditar" para parar.': 'Dictation on. Click "Dictate" again to stop.',
+  'Não consegui iniciar o ditado por voz.': 'Could not start voice dictation.',
+  'Ditado desligado.': 'Dictation off.',
+  'Controles de leitura em voz alta': 'Read-aloud controls',
+  'Pausar': 'Pause',
+  'Parar': 'Stop',
+  'Continuar': 'Resume',
+  'Velocidade': 'Speed',
+  'Lendo em {idioma}': 'Reading in {idioma}',
 };
 
 function detect() {
