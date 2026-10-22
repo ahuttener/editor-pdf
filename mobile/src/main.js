@@ -16,6 +16,7 @@ import { openEditor, editorIsOpen, editorBack } from './editor.js';
 import { mergePdfs, imagesToPdf, loadPdf, thumbnail } from './pdf.js';
 import { savedSignature, clearSignature } from './signature.js';
 import { TOOL_GROUPS, TOOL_ACTIONS, setupTools, ensureUnlocked } from './tools.js';
+import { maybeShowDonation } from './donate.js';
 
 const VERSION = '1.0.0';
 const SITE = 'https://cybersecinfo.com/';
@@ -263,10 +264,15 @@ if (Capacitor.isNativePlatform()) {
   syncBar();
   new MutationObserver(syncBar).observe(document.body, { attributes: true, attributeFilter: ['class'] });
   App.addListener('backButton', () => {
+    const donate = document.querySelector('.bmc-back');
+    if (donate) return donate.click();
     const open = document.querySelector('.sheet-root.open .sheet-backdrop');
     if (open) return open.click();
     if (editorIsOpen()) return editorBack();
     if (tab !== 'home') { tab = 'home'; render(); return; }
     App.exitApp();
   });
+
+  // Apoio (Buy Me a Coffee): sobe logo depois da home aparecer. Só Android.
+  setTimeout(() => { try { maybeShowDonation(); } catch {} }, 800);
 }
