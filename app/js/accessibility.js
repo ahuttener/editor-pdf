@@ -1,5 +1,5 @@
-// Acessibilidade por voz: ler o PDF em voz alta (no idioma do documento),
-// ditar por voz nos campos e anúncios para leitor de tela.
+// Acessibilidade por voz: ler o PDF em voz alta (no idioma do documento)
+// e anúncios para leitor de tela.
 // Tudo roda localmente no navegador/Electron, sem API paga e sem servidor.
 import { t, getLang } from './i18n.js';
 
@@ -72,25 +72,10 @@ export function setupAccessibility(ctx) {
   const { toast } = ctx;
   const synth = window.speechSynthesis;
   const hasTTS = !!synth;
-  const Recog = window.SpeechRecognition || window.webkitSpeechRecognition;
 
   injectStyles();
   const live = makeLiveRegion();
   const announce = (msg) => { live.textContent = ''; requestAnimationFrame(() => { live.textContent = msg; }); };
-
-  // beep curto para quem não enxerga saber que o microfone ligou/desligou
-  let audioCtx = null;
-  function beep(freq = 660, ms = 120) {
-    try {
-      audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
-      const osc = audioCtx.createOscillator();
-      const gain = audioCtx.createGain();
-      osc.frequency.value = freq; osc.type = 'sine';
-      gain.gain.value = 0.08;
-      osc.connect(gain).connect(audioCtx.destination);
-      osc.start(); osc.stop(audioCtx.currentTime + ms / 1000);
-    } catch { /* som é só um reforço, pode falhar em silêncio */ }
-  }
 
   // ---------- leitura em voz alta ----------
   const bar = makeReadingBar();
@@ -167,88 +152,14 @@ export function setupAccessibility(ctx) {
     if (reading && !synth.paused) { try { synth.cancel(); } catch {} speakNext(); }
   }
 
-  // ---------- ditado por voz ----------
-  let recog = null, dictating = false, dictationTarget = null;
-
-  function dictate() {
-    if (dictating) { stopDictation(); return; }
-    if (!Recog) {
-      toast(t('O ditado por voz não está disponível neste aplicativo. Use o microfone do teclado, ou a versão no navegador Chrome.'), true);
-      return;
-    }
-    if (!ctx.hasDoc()) { toast(t('Abra um PDF primeiro.')); return; }
-
-    recog = new Recog();
-    recog.lang = bcp47(getLang());
-    recog.continuous = true;
-    recog.interimResults = false;
-    recog.onresult = (e) => {
-      let said = '';
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        if (e.results[i].isFinal) said += e.results[i][0].transcript;
-      }
-      said = said.trim();
-      if (said) insertDictated(said + ' ');
-    };
-    recog.onerror = (e) => {
-      const msg = e.error === 'not-allowed' || e.error === 'service-not-allowed'
-        ? t('Permissão de microfone negada ou indisponível neste aplicativo.')
-        : e.error === 'no-speech' ? t('Não ouvi nada. Tente de novo.')
-        : t('O ditado falhou ({erro}).', { erro: e.error });
-      toast(msg, true); stopDictation();
-    };
-    recog.onend = () => { if (dictating) { try { recog.start(); } catch { stopDictation(); } } };
-
-    try {
-      recog.start();
-      dictating = true; dictationTarget = null;
-      beep(760); announce(t('Ditado ligado. Fale e o texto será escrito.'));
-      toast(t('Ditado ligado. Clique de novo em "Ditar" para parar.'));
-    } catch {
-      toast(t('Não consegui iniciar o ditado por voz.'), true);
-    }
-  }
-
-  function stopDictation() {
-    dictating = false;
-    try { recog && recog.stop(); } catch {}
-    recog = null; beep(440); announce(t('Ditado desligado.'));
-  }
-
-  function insertDictated(txt) {
-    const entry = ctx.state.current;
-    const canvas = entry?.fabric;
-    if (!canvas) return;
-    let obj = canvas.getActiveObject();
-    const isText = obj && (obj.type === 'i-text' || obj.type === 'text' || obj.type === 'textbox');
-
-    if (isText && obj.isEditing) {
-      const start = obj.selectionStart ?? obj.text.length;
-      obj.insertChars(txt, null, start, obj.selectionEnd ?? start);
-      obj.selectionStart = obj.selectionEnd = start + txt.length;
-      if (obj.hiddenTextarea) obj.hiddenTextarea.value = obj.text;
-      canvas.requestRenderAll();
-    } else if (dictationTarget && dictationTarget.canvas === canvas) {
-      const o = dictationTarget.obj;
-      o.text += txt; o.set('text', o.text);
-      canvas.requestRenderAll();
-    } else {
-      // cria uma caixa de texto nova e passa a ditar nela
-      ctx.addText(entry, { x: 72, y: 72 }, txt.trim());
-      dictationTarget = { canvas, obj: canvas.getActiveObject() };
-    }
-    ctx.setDirty && ctx.setDirty(true);
-  }
-
   // ---------- atalhos de teclado ----------
   document.addEventListener('keydown', (e) => {
     if (e.altKey && !e.ctrlKey && !e.metaKey) {
       const k = e.key.toLowerCase();
       if (k === 'l') { e.preventDefault(); readAloud(); }
-      else if (k === 'd') { e.preventDefault(); dictate(); }
       else if (k === 'p' && reading) { e.preventDefault(); pauseReading(); }
     }
-    if (e.key === 'Escape') { if (reading) stopReading(); if (dictating) stopDictation(); }
+    if (e.key === 'Escape') { if (reading) stopReading(); }
   });
 
   // ---------- barra de leitura (DOM) ----------
@@ -287,14 +198,10 @@ export function setupAccessibility(ctx) {
     };
   }
 
-  return { readAloud, dictate, stopReading, stopDictation };
+  return { readAloud, stopReading };
 }
 
 // ---------- helpers de DOM ----------
-function bcp47(lang) {
-  return ({ pt: 'pt-BR', en: 'en-US' })[lang] || lang || 'pt-BR';
-}
-
 function makeLiveRegion() {
   let el = document.getElementById('a11y-live');
   if (!el) {

@@ -435,8 +435,6 @@ const EN = {
   // ---------- acessibilidade por voz ----------
   'Ler em voz alta': 'Read aloud',
   'Ler o documento em voz alta, no idioma do texto (Alt+L)': "Read the document aloud, in the text's language (Alt+L)",
-  'Ditar': 'Dictate',
-  'Ditar por voz: fale e o texto é escrito no campo (Alt+D)': 'Voice dictation: speak and the text is typed into the field (Alt+D)',
   'Este navegador não consegue ler em voz alta.': 'This browser cannot read aloud.',
   'Preparando a leitura…': 'Preparing to read…',
   'Este PDF parece ser uma imagem escaneada, sem texto para ler. Use "OCR (reconhecer texto)" na aba Documento e tente de novo.':
@@ -450,15 +448,6 @@ const EN = {
   'Leitura interrompida.': 'Reading stopped.',
   'Continuando a leitura.': 'Resuming reading.',
   'Leitura pausada.': 'Reading paused.',
-  'O ditado por voz não está disponível neste aplicativo. Use o microfone do teclado, ou a versão no navegador Chrome.':
-    'Voice dictation is not available in this app. Use the keyboard microphone, or the version in the Chrome browser.',
-  'Permissão de microfone negada ou indisponível neste aplicativo.': 'Microphone permission denied or unavailable in this app.',
-  'Não ouvi nada. Tente de novo.': "I didn't hear anything. Try again.",
-  'O ditado falhou ({erro}).': 'Dictation failed ({erro}).',
-  'Ditado ligado. Fale e o texto será escrito.': 'Dictation on. Speak and the text will be typed.',
-  'Ditado ligado. Clique de novo em "Ditar" para parar.': 'Dictation on. Click "Dictate" again to stop.',
-  'Não consegui iniciar o ditado por voz.': 'Could not start voice dictation.',
-  'Ditado desligado.': 'Dictation off.',
   'Controles de leitura em voz alta': 'Read-aloud controls',
   'Pausar': 'Pause',
   'Parar': 'Stop',

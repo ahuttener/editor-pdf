@@ -806,7 +806,6 @@ export function setupFeatures(ctx) {
     pageNumbers: () => headerFooter({ bc: t('Página {n} de {total}') }),
     ocr, compress, properties,
     readAloud: () => ctx.access?.readAloud(),
-    dictate: () => ctx.access?.dictate(),
     toWord, toImages, toText, imagesToPdf,
     password, removePassword,
     print,
