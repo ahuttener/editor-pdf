@@ -7,3 +7,6 @@ vendor/
 *.err
 .impeccable/
 scripts/probe/
+
+# pasta temporária de build/instaladores (local)
+dist-102/

@@ -12,7 +12,6 @@
     "android:debug": "vite build && cap sync android && cd android && gradlew.bat assembleDebug"
   },
   "dependencies": {
-    "@capacitor-community/speech-recognition": "^7.0.1",
     "@capacitor-community/text-to-speech": "^8.0.2",
     "@capacitor/android": "^8.5.3",
     "@capacitor/app": "^8.1.2",

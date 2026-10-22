@@ -1,8 +1,6 @@
 // Voz no app: ler o PDF em voz alta, no idioma do próprio documento.
-// Usa a voz do celular (speechSynthesis) — roda localmente, sem custo e sem servidor.
-// O ditado por voz (microfone) é nativo e fica num módulo/plugin à parte.
+// Usa a voz do celular (TTS nativo / speechSynthesis) — roda localmente, sem custo e sem servidor.
 import { Capacitor } from '@capacitor/core';
-import { SpeechRecognition } from '@capacitor-community/speech-recognition';
 import { TextToSpeech } from '@capacitor-community/text-to-speech';
 import { t, getLang } from './i18n.js';
 import { $, esc, sheet, toast, busy } from './ui.js';
@@ -75,6 +73,9 @@ const bcp47 = (lang) => ({ pt: 'pt-BR', en: 'en-US' })[lang] || lang || 'pt-BR';
 
 // bcp47 completo para o TTS nativo (precisa do país).
 const bcp47Full = (lang) => ({ pt: 'pt-BR', en: 'en-US', es: 'es-ES', fr: 'fr-FR', de: 'de-DE', it: 'it-IT' })[lang] || lang || 'pt-BR';
+
+// No celular (Capacitor) usamos o TTS nativo; no navegador, o speechSynthesis.
+const isNative = () => { try { return Capacitor.isNativePlatform(); } catch { return false; } };
 
 export function ttsSupported() {
   // No celular usamos o TTS nativo (plugin); no navegador, o speechSynthesis.
@@ -249,118 +250,4 @@ function openReadingSheetNative({ chunks, lang, truncated }) {
   $('[data-rate]', s.el).addEventListener('change', (e) => { rate = parseFloat(e.target.value) || 1; });
 
   loop();
-}
-
-// ======================= Ditado por voz (microfone) =======================
-// No celular usa o reconhecimento nativo (plugin). No navegador, a Web Speech API.
-// Aviso de privacidade: o reconhecimento pode enviar o áudio da fala para o
-// serviço do sistema (Google/Apple). A ficha das lojas declara o uso do microfone.
-const isNative = () => { try { return Capacitor.isNativePlatform(); } catch { return false; } };
-const WebRecog = (typeof window !== 'undefined') && (window.SpeechRecognition || window.webkitSpeechRecognition);
-
-let dictating = false;
-let onTextCb = null, onStateCb = null;
-let pendingPartial = '';
-let webRec = null;
-
-export function dictationSupported() {
-  return isNative() || !!WebRecog;
-}
-
-export function dictationActive() { return dictating; }
-
-// Liga/desliga o ditado. Devolve se ficou ligado.
-export async function toggleDictation({ onText, onState }) {
-  if (dictating) { await stopDictation(); return false; }
-  onTextCb = onText; onStateCb = onState; pendingPartial = '';
-  return isNative() ? startNative(bcp47(getLang())) : startWeb(bcp47(getLang()));
-}
-
-export async function stopDictation() {
-  if (!dictating && !webRec) return;
-  dictating = false;
-  if (isNative()) {
-    try { await SpeechRecognition.stop(); } catch { /* ok */ }
-    try { await SpeechRecognition.removeAllListeners(); } catch { /* ok */ }
-  } else if (webRec) {
-    try { webRec.onend = null; webRec.stop(); } catch { /* ok */ }
-    webRec = null;
-  }
-  onStateCb?.(false);
-}
-
-async function startNative(lang) {
-  try {
-    let p = await SpeechRecognition.checkPermissions();
-    if (p.speechRecognition !== 'granted') p = await SpeechRecognition.requestPermissions();
-    if (p.speechRecognition !== 'granted') {
-      toast(t('Para ditar, permita o microfone nas configurações do aparelho.'), 'error');
-      return false;
-    }
-  } catch (err) {
-    console.error(err);
-    toast(t('Não consegui acessar o microfone.'), 'error');
-    return false;
-  }
-  try { await SpeechRecognition.removeAllListeners(); } catch { /* ok */ }
-  try {
-    await SpeechRecognition.addListener('partialResults', (data) => {
-      const m = (data && data.matches && data.matches[0]) || '';
-      if (m) pendingPartial = m;
-    });
-  } catch { /* parciais são opcionais */ }
-  dictating = true;
-  onStateCb?.(true);
-  toast(t('Ditado ligado. Fale; toque em "Ditar" de novo para parar.'));
-  nativeLoop(lang);
-  return true;
-}
-
-// Fica ouvindo frase a frase enquanto o ditado estiver ligado.
-async function nativeLoop(lang) {
-  let errs = 0;
-  while (dictating) {
-    pendingPartial = '';
-    let res;
-    try {
-      res = await SpeechRecognition.start({ language: lang, maxResults: 1, partialResults: true, popup: false });
-      errs = 0;
-    } catch (err) {
-      if (pendingPartial) { onTextCb?.(pendingPartial.trim() + ' '); pendingPartial = ''; }
-      if (!dictating) break;
-      if (++errs > 6) { toast(t('O ditado parou. Toque em "Ditar" para tentar de novo.'), 'error'); await stopDictation(); break; }
-      await new Promise((r) => setTimeout(r, 300));
-      continue;
-    }
-    const said = ((res && res.matches && res.matches[0]) || pendingPartial || '').trim();
-    if (said) onTextCb?.(said + ' ');
-  }
-}
-
-function startWeb(lang) {
-  if (!WebRecog) { toast(t('O ditado por voz não está disponível aqui.'), 'error'); return false; }
-  webRec = new WebRecog();
-  webRec.lang = lang;
-  webRec.continuous = true;
-  webRec.interimResults = false;
-  webRec.onresult = (e) => {
-    let said = '';
-    for (let i = e.resultIndex; i < e.results.length; i++) if (e.results[i].isFinal) said += e.results[i][0].transcript;
-    said = said.trim();
-    if (said) onTextCb?.(said + ' ');
-  };
-  webRec.onerror = (e) => {
-    if (e.error === 'not-allowed' || e.error === 'service-not-allowed') { toast(t('Permissão de microfone negada.'), 'error'); stopDictation(); }
-  };
-  webRec.onend = () => { if (dictating) { try { webRec.start(); } catch { /* ok */ } } };
-  try {
-    webRec.start();
-    dictating = true;
-    onStateCb?.(true);
-    toast(t('Ditado ligado. Fale; toque em "Ditar" de novo para parar.'));
-    return true;
-  } catch {
-    toast(t('Não consegui iniciar o ditado.'), 'error');
-    return false;
-  }
 }

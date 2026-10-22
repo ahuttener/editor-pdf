@@ -313,8 +313,6 @@ button.row:active { background: var(--line-soft); }
 .ed-selbar.is-text .txt-only { display: flex; flex-direction: row; }
 .ed-selbar sup { font-size: 11px; }
 .ed-selbar .danger { color: #b3261e; }
-.ed-selbar.is-text [data-sel="dictate"] { flex-direction: column; }
-.ed-selbar [data-sel="dictate"].is-on { color: #b3261e; background: #fde8e6; }
 .dot { width: 18px; height: 18px; border-radius: 50%; background: var(--c, #111827); box-shadow: 0 0 0 1px rgba(0,0,0,.15), inset 0 0 0 2px #fff; }
 .dot.big { width: 22px; height: 22px; }
 .ed-pageind { background: rgba(17,24,39,.72); color: #fff; font-size: 12px; font-weight: 700; border-radius: 999px; padding: 4px 12px; opacity: 0; transition: opacity .25s; }
