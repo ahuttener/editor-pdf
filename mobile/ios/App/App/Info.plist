@@ -8,6 +8,10 @@
 	<string>Para escolher fotos e imagens e colocá-las no PDF.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>Para salvar as imagens geradas a partir do PDF.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Para ditar texto por voz e escrevê-lo no PDF.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Para transformar sua fala em texto e escrevê-lo no PDF.</string>
   <key>CAPACITOR_DEBUG</key>
 	<string>$(CAPACITOR_DEBUG)</string>
 	<key>CFBundleDevelopmentRegion</key>

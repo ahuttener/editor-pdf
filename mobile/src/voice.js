@@ -1,0 +1,288 @@
+// Voz no app: ler o PDF em voz alta, no idioma do próprio documento.
+// Usa a voz do celular (speechSynthesis) — roda localmente, sem custo e sem servidor.
+// O ditado por voz (microfone) é nativo e fica num módulo/plugin à parte.
+import { Capacitor } from '@capacitor/core';
+import { SpeechRecognition } from '@capacitor-community/speech-recognition';
+import { t, getLang } from './i18n.js';
+import { $, esc, sheet, toast, busy } from './ui.js';
+import { engine } from './engine.js';
+
+// ---------- detecção de idioma (sem dependências) ----------
+// Conta palavras comuns de cada idioma para escolher a voz certa.
+const LANG_HINTS = [
+  ['pt', /\b(que|n[ãa]o|uma|com|para|como|mais|dos|das|voc[êe]|est[áa]|s[ãa]o|pela|isso|tamb[ée]m|ent[ãa]o|muito|quando)\b/gi],
+  ['en', /\b(the|and|that|with|for|you|this|are|was|have|not|from|they|would|there|which|about|your)\b/gi],
+  ['es', /\b(que|los|las|una|con|para|como|m[áa]s|del|pero|este|cuando|porque|tambi[ée]n|muy|est[áa]n)\b/gi],
+  ['fr', /\b(les|des|une|avec|pour|que|pas|vous|est|sont|dans|cette|mais|comme|plus|nous|votre)\b/gi],
+  ['de', /\b(der|die|und|den|das|mit|f[üu]r|nicht|ist|sind|auch|werden|einen|eine|aber|durch|oder)\b/gi],
+  ['it', /\b(che|non|una|con|per|come|pi[ùu]|dei|delle|questo|quando|perch[ée]|anche|molto|sono)\b/gi],
+];
+
+function detectLang(text) {
+  const sample = (text || '').slice(0, 5000);
+  if (sample.replace(/\s/g, '').length < 20) return null;
+  let best = null, bestScore = 0;
+  for (const [code, re] of LANG_HINTS) {
+    const n = (sample.match(re) || []).length;
+    if (n > bestScore) { bestScore = n; best = code; }
+  }
+  return bestScore >= 3 ? best : null;
+}
+
+// ---------- vozes do sistema ----------
+function ensureVoices() {
+  const synth = window.speechSynthesis;
+  return new Promise((resolve) => {
+    const v = synth.getVoices();
+    if (v.length) return resolve(v);
+    const done = () => resolve(synth.getVoices());
+    synth.addEventListener('voiceschanged', done, { once: true });
+    setTimeout(done, 1200); // alguns ambientes não disparam o evento
+  });
+}
+
+function pickVoice(voices, lang) {
+  const l = (lang || '').toLowerCase();
+  const prefer = l === 'pt' ? ['pt-br', 'pt-pt', 'pt'] : [l + '-', l];
+  for (const p of prefer) {
+    const hit = voices.find((v) => (v.lang || '').toLowerCase().startsWith(p));
+    if (hit) return hit;
+  }
+  return voices.find((v) => (v.lang || '').toLowerCase().startsWith(l)) || null;
+}
+
+// Quebra o texto em pedaços curtos (frase a frase) para a leitura não cortar.
+function chunkText(text, max = 240) {
+  const parts = [];
+  for (const para of text.split(/\n{2,}/)) {
+    const clean = para.replace(/\s+/g, ' ').trim();
+    if (!clean) continue;
+    const sentences = clean.match(/[^.!?…]+[.!?…]*\s*/g) || [clean];
+    let buf = '';
+    for (const s of sentences) {
+      if ((buf + s).length > max && buf) { parts.push(buf.trim()); buf = ''; }
+      buf += s;
+    }
+    if (buf.trim()) parts.push(buf.trim());
+  }
+  return parts;
+}
+
+const LANG_NAME = { pt: 'Português', en: 'English', es: 'Español', fr: 'Français', de: 'Deutsch', it: 'Italiano' };
+const MAX_CHARS = 120000; // teto para documentos enormes
+const bcp47 = (lang) => ({ pt: 'pt-BR', en: 'en-US' })[lang] || lang || 'pt-BR';
+
+export function ttsSupported() {
+  return typeof window !== 'undefined' && 'speechSynthesis' in window;
+}
+
+// Lê em voz alta os bytes de um PDF (o documento aberto no editor).
+export async function readAloudPdf(bytes) {
+  const synth = window.speechSynthesis;
+  if (!synth) { toast(t('Este aparelho não consegue ler em voz alta.'), 'error'); return; }
+
+  // "Desbloqueia" o TTS ainda dentro do toque (iOS só fala depois de um gesto do usuário).
+  try { synth.cancel(); const warm = new SpeechSynthesisUtterance(''); warm.volume = 0; synth.speak(warm); } catch { /* ok */ }
+
+  let pages;
+  const stop = busy(t('Preparando a leitura…'));
+  try {
+    ({ pages } = await engine('structuredText', { bytes: bytes.slice() }));
+  } catch (err) {
+    stop(); console.error(err);
+    toast(t('Não foi possível ler o texto deste PDF.'), 'error');
+    return;
+  }
+  stop();
+
+  let text = (pages || []).map((p) => (p.text || '').trim()).filter(Boolean).join('\n\n').trim();
+  if (text.replace(/\s/g, '').length < 10) {
+    toast(t('Este PDF parece ser uma imagem escaneada, sem texto para ler. Use o OCR na aba Ferramentas e tente de novo.'), 'error');
+    return;
+  }
+  let truncated = false;
+  if (text.length > MAX_CHARS) { text = text.slice(0, MAX_CHARS); truncated = true; }
+
+  const voices = await ensureVoices();
+  const lang = detectLang(text) || getLang() || 'pt';
+  const voice = pickVoice(voices, lang);
+  if (!voice) toast(t('Não há voz instalada para {idioma}; vou ler com a voz padrão.', { idioma: LANG_NAME[lang] || lang }));
+
+  openReadingSheet({ synth, chunks: chunkText(text), lang, voice, truncated });
+}
+
+// Painel de controle da leitura (pausar/continuar/parar/velocidade).
+function openReadingSheet({ synth, chunks, lang, voice, truncated }) {
+  const name = LANG_NAME[lang] || lang;
+  let idx = 0, rate = 1, finished = false;
+
+  const content = `
+    <p class="sheet-text" data-status></p>
+    ${truncated ? `<p class="form-note">${esc(t('Documento muito longo: vou ler apenas o começo.'))}</p>` : ''}
+    <label class="field"><span>${esc(t('Velocidade'))}</span>
+      <select data-rate>
+        <option value="0.75">0,75×</option>
+        <option value="1" selected>1×</option>
+        <option value="1.25">1,25×</option>
+        <option value="1.5">1,5×</option>
+      </select>
+    </label>
+    <div class="sheet-actions">
+      <button class="btn btn-primary" data-pause>${esc(t('Pausar'))}</button>
+      <button class="btn btn-secondary" data-stop>${esc(t('Parar'))}</button>
+    </div>`;
+
+  const s = sheet(content, {
+    title: t('Lendo em voz alta'),
+    onClose: () => { try { synth.cancel(); } catch { /* ok */ } },
+  });
+
+  const statusEl = $('[data-status]', s.el);
+  const pauseBtn = $('[data-pause]', s.el);
+  const setStatus = () => {
+    statusEl.textContent = finished
+      ? t('Leitura concluída.')
+      : `${t('Lendo em {idioma}', { idioma: name })} — ${Math.min(idx + 1, chunks.length)}/${chunks.length}`;
+  };
+  setStatus();
+
+  function speakNext() {
+    if (finished) return;
+    if (idx >= chunks.length) { finished = true; pauseBtn.disabled = true; setStatus(); return; }
+    const u = new SpeechSynthesisUtterance(chunks[idx]);
+    if (voice) u.voice = voice;
+    u.lang = voice?.lang || bcp47(lang);
+    u.rate = rate;
+    u.onend = () => { if (!finished) { idx++; setStatus(); speakNext(); } };
+    u.onerror = () => { if (!finished) { idx++; speakNext(); } };
+    try { synth.speak(u); } catch { finished = true; }
+  }
+
+  pauseBtn.addEventListener('click', () => {
+    if (finished) return;
+    if (synth.paused) { synth.resume(); pauseBtn.textContent = t('Pausar'); }
+    else { synth.pause(); pauseBtn.textContent = t('Continuar'); }
+  });
+  $('[data-stop]', s.el).addEventListener('click', () => s.close());
+  $('[data-rate]', s.el).addEventListener('change', (e) => {
+    rate = parseFloat(e.target.value) || 1;
+    // a nova velocidade vale a partir da próxima frase
+    if (!finished && !synth.paused) { try { synth.cancel(); } catch { /* ok */ } speakNext(); }
+  });
+
+  speakNext();
+}
+
+// ======================= Ditado por voz (microfone) =======================
+// No celular usa o reconhecimento nativo (plugin). No navegador, a Web Speech API.
+// Aviso de privacidade: o reconhecimento pode enviar o áudio da fala para o
+// serviço do sistema (Google/Apple). A ficha das lojas declara o uso do microfone.
+const isNative = () => { try { return Capacitor.isNativePlatform(); } catch { return false; } };
+const WebRecog = (typeof window !== 'undefined') && (window.SpeechRecognition || window.webkitSpeechRecognition);
+
+let dictating = false;
+let onTextCb = null, onStateCb = null;
+let pendingPartial = '';
+let webRec = null;
+
+export function dictationSupported() {
+  return isNative() || !!WebRecog;
+}
+
+export function dictationActive() { return dictating; }
+
+// Liga/desliga o ditado. Devolve se ficou ligado.
+export async function toggleDictation({ onText, onState }) {
+  if (dictating) { await stopDictation(); return false; }
+  onTextCb = onText; onStateCb = onState; pendingPartial = '';
+  return isNative() ? startNative(bcp47(getLang())) : startWeb(bcp47(getLang()));
+}
+
+export async function stopDictation() {
+  if (!dictating && !webRec) return;
+  dictating = false;
+  if (isNative()) {
+    try { await SpeechRecognition.stop(); } catch { /* ok */ }
+    try { await SpeechRecognition.removeAllListeners(); } catch { /* ok */ }
+  } else if (webRec) {
+    try { webRec.onend = null; webRec.stop(); } catch { /* ok */ }
+    webRec = null;
+  }
+  onStateCb?.(false);
+}
+
+async function startNative(lang) {
+  try {
+    let p = await SpeechRecognition.checkPermissions();
+    if (p.speechRecognition !== 'granted') p = await SpeechRecognition.requestPermissions();
+    if (p.speechRecognition !== 'granted') {
+      toast(t('Para ditar, permita o microfone nas configurações do aparelho.'), 'error');
+      return false;
+    }
+  } catch (err) {
+    console.error(err);
+    toast(t('Não consegui acessar o microfone.'), 'error');
+    return false;
+  }
+  try { await SpeechRecognition.removeAllListeners(); } catch { /* ok */ }
+  try {
+    await SpeechRecognition.addListener('partialResults', (data) => {
+      const m = (data && data.matches && data.matches[0]) || '';
+      if (m) pendingPartial = m;
+    });
+  } catch { /* parciais são opcionais */ }
+  dictating = true;
+  onStateCb?.(true);
+  toast(t('Ditado ligado. Fale; toque em "Ditar" de novo para parar.'));
+  nativeLoop(lang);
+  return true;
+}
+
+// Fica ouvindo frase a frase enquanto o ditado estiver ligado.
+async function nativeLoop(lang) {
+  let errs = 0;
+  while (dictating) {
+    pendingPartial = '';
+    let res;
+    try {
+      res = await SpeechRecognition.start({ language: lang, maxResults: 1, partialResults: true, popup: false });
+      errs = 0;
+    } catch (err) {
+      if (pendingPartial) { onTextCb?.(pendingPartial.trim() + ' '); pendingPartial = ''; }
+      if (!dictating) break;
+      if (++errs > 6) { toast(t('O ditado parou. Toque em "Ditar" para tentar de novo.'), 'error'); await stopDictation(); break; }
+      await new Promise((r) => setTimeout(r, 300));
+      continue;
+    }
+    const said = ((res && res.matches && res.matches[0]) || pendingPartial || '').trim();
+    if (said) onTextCb?.(said + ' ');
+  }
+}
+
+function startWeb(lang) {
+  if (!WebRecog) { toast(t('O ditado por voz não está disponível aqui.'), 'error'); return false; }
+  webRec = new WebRecog();
+  webRec.lang = lang;
+  webRec.continuous = true;
+  webRec.interimResults = false;
+  webRec.onresult = (e) => {
+    let said = '';
+    for (let i = e.resultIndex; i < e.results.length; i++) if (e.results[i].isFinal) said += e.results[i][0].transcript;
+    said = said.trim();
+    if (said) onTextCb?.(said + ' ');
+  };
+  webRec.onerror = (e) => {
+    if (e.error === 'not-allowed' || e.error === 'service-not-allowed') { toast(t('Permissão de microfone negada.'), 'error'); stopDictation(); }
+  };
+  webRec.onend = () => { if (dictating) { try { webRec.start(); } catch { /* ok */ } } };
+  try {
+    webRec.start();
+    dictating = true;
+    onStateCb?.(true);
+    toast(t('Ditado ligado. Fale; toque em "Ditar" de novo para parar.'));
+    return true;
+  } catch {
+    toast(t('Não consegui iniciar o ditado.'), 'error');
+    return false;
+  }
+}

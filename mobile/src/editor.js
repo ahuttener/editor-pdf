@@ -7,6 +7,7 @@ import { loadPdf, isPasswordError, buildPdf, imagesToPdf, thumbnail, readForm, b
 import { engine } from './engine.js';
 import { saveDoc, shareDoc, printPdf } from './storage.js';
 import { chooseSignature } from './signature.js';
+import { ttsSupported, readAloudPdf, dictationSupported, toggleDictation, stopDictation } from './voice.js';
 
 const TEXT_COLORS = ['#111827', '#c8141c', '#1c4a82', '#187434', '#7c3aed', '#ffffff'];
 const HL_COLORS = ['#ffe14d', '#8ef07a', '#ff8ad8', '#7fd8ff'];
@@ -111,6 +112,7 @@ export async function openEditor({ name, id = null, bytes, mode = 'annotate', pr
     <header class="ed-top">
       <button class="icon-btn" data-act="back" aria-label="${t('Voltar')}">${icon('back')}</button>
       <div class="ed-title"><strong></strong><small></small></div>
+      <button class="icon-btn" data-act="speak" aria-label="${t('Ler em voz alta')}">${icon('speaker')}</button>
       <button class="icon-btn" data-act="print" aria-label="${t('Imprimir')}">${icon('printer')}</button>
       <button class="icon-btn" data-act="undo" aria-label="${t('Desfazer')}" disabled>${icon('undo')}</button>
       <button class="icon-btn" data-act="redo" aria-label="${t('Refazer')}" disabled>${icon('redo')}</button>
@@ -131,6 +133,7 @@ export async function openEditor({ name, id = null, bytes, mode = 'annotate', pr
         <button data-sel="color" aria-label="${t('Cor')}"><span class="dot"></span><span>${t('Cor')}</span></button>
         <button data-sel="smaller" class="txt-only" aria-label="A-">A<sup>−</sup></button>
         <button data-sel="bigger" class="txt-only" aria-label="A+">A<sup>+</sup></button>
+        <button data-sel="dictate" class="txt-only" aria-pressed="false">${icon('mic', { size: 19 })}<span>${t('Ditar')}</span></button>
         <button data-sel="dup">${icon('copy', { size: 19 })}<span>${t('Duplicar')}</span></button>
         <button data-sel="del" class="danger">${icon('trash', { size: 19 })}<span>${t('Excluir')}</span></button>
       </div>
@@ -542,6 +545,7 @@ export async function openEditor({ name, id = null, bytes, mode = 'annotate', pr
     const col = obj.kind === 'pen' || obj.kind === 'shape' ? obj.stroke : obj.fill;
     $('[data-sel="color"]', selbar).hidden = ['cover', 'redact', 'stamp', 'signature', 'image', 'field-text', 'field-check'].includes(obj.kind) || obj.type === 'image';
     $('[data-sel="color"] .dot', selbar).style.setProperty('--c', typeof col === 'string' ? col : '#111827');
+    $('[data-sel="dictate"]', selbar).hidden = !(isText && dictationSupported());
     selbar.hidden = false;
     hintEl.hidden = true;
   }
@@ -575,8 +579,29 @@ export async function openEditor({ name, id = null, bytes, mode = 'annotate', pr
       canvas.requestRenderAll();
       commit(key);
       showSelbar(key);
+    } else if (act === 'dictate') {
+      await toggleDictation({
+        onText: (txt) => { insertDictated(obj, canvas, txt); commit(key); },
+        onState: (on) => { b.classList.toggle('is-on', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); },
+      });
     }
   });
+
+  // Escreve o texto ditado no objeto de texto em foco (reaproveita o undo/dirty via commit).
+  function insertDictated(obj, canvas, txt) {
+    if (!obj || !canvas) return;
+    if (obj.isEditing) {
+      const start = obj.selectionStart ?? (obj.text || '').length;
+      obj.insertChars(txt, null, start, obj.selectionEnd ?? start);
+      const np = start + txt.length;
+      obj.selectionStart = obj.selectionEnd = np;
+      if (obj.hiddenTextarea) obj.hiddenTextarea.value = obj.text;
+    } else {
+      obj.set('text', (obj.text || '') + txt);
+    }
+    obj.setCoords();
+    canvas.requestRenderAll();
+  }
 
   function pickColor(list) {
     return new Promise((resolve) => {
@@ -1401,6 +1426,7 @@ export async function openEditor({ name, id = null, bytes, mode = 'annotate', pr
   }
 
   function close() {
+    try { stopDictation(); } catch { /* ok */ }
     stopKeyboardWatch();
     io?.disconnect();
     for (const key of [...views.keys()]) unmount(key);
@@ -1412,6 +1438,13 @@ export async function openEditor({ name, id = null, bytes, mode = 'annotate', pr
     onExit?.();
   }
 
+  function speak() {
+    if (!ttsSupported()) { toast(t('Este aparelho não consegue ler em voz alta.'), 'error'); return; }
+    const src = doc.sources.get('s0');
+    if (!src?.bytes) { toast(t('Abra um PDF primeiro.')); return; }
+    readAloudPdf(src.bytes);
+  }
+
   root.querySelector('.ed-top').addEventListener('click', (e) => {
     const b = e.target.closest('[data-act]');
     if (!b) return;
@@ -1419,6 +1452,7 @@ export async function openEditor({ name, id = null, bytes, mode = 'annotate', pr
     if (act === 'back') back();
     else if (act === 'save') save();
     else if (act === 'print') printNow();
+    else if (act === 'speak') speak();
     else if (act === 'undo') step(state.undo, state.redo, 'before');
     else if (act === 'redo') step(state.redo, state.undo, 'after');
   });
