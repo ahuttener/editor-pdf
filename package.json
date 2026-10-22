@@ -1,7 +1,7 @@
 {
   "name": "editorpdf",
   "productName": "Editor PDF",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "description": "Editor de PDF para Windows: editar texto existente, adicionar texto, imagem e assinatura, organizar páginas e preencher formulários.",
   "author": {
     "name": "CyberSecInfo",
