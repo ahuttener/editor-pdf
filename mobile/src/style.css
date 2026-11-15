@@ -379,7 +379,11 @@ body[data-tab="home"] .main { overflow: hidden; }
 .home .sec-row { margin-top: 10px; }
 .home .qcell { min-height: 82px; padding: 10px 4px 8px; gap: 6px; }
 .home .qdisc { width: 40px; height: 40px; }
-.home .recents { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; border-radius: var(--r); }
+.home .recents { flex: 1 0 auto; min-height: 0; max-height: none; overflow-y: auto; -webkit-overflow-scrolling: touch; border-radius: var(--r); }
+/* Tela baixa (iPhone SE, iPhone app no iPad): em vez de espremer "Recentes" até sumir, a parte de baixo rola */
+.home .body { overflow-y: auto; -webkit-overflow-scrolling: touch; }
+.home .recents:has(.empty) { flex-shrink: 0; }
+.home .recents:has(.docs) { flex: 1 1 0; min-height: 168px; }
 .home .empty { padding: 14px 16px; }
 .home .empty-art { width: 48px; height: 48px; margin-bottom: 8px; border-radius: 14px; }
 .home .empty h3 { font-size: 15.5px; line-height: 21px; }
