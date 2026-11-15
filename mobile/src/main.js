@@ -146,7 +146,7 @@ function homeView() {
       <div class="hero-row">
         <img class="hero-icon" src="img/icon.png" alt="">
         <span class="hero-name">Editor PDF</span>
-        <button class="pill" data-act="lang">${icon('globe', { size: 15 })}<span>${getLang().toUpperCase()}</span></button>
+        <button class="pill" data-act="lang" aria-label="${t('Idioma')}: ${getLang() === 'en' ? 'English' : 'Português'}">${icon('globe', { size: 15 })}<span>${getLang().toUpperCase()}</span></button>
       </div>
       <h1>${t('Edite, assine e organize seus PDFs')}</h1>
       <p>${t('Tudo no seu celular, sem enviar seus documentos para a internet.')}</p>

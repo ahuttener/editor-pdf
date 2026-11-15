@@ -287,7 +287,7 @@ button.row:active { background: var(--line-soft); }
 .ed-modes button { height: 46px; border-radius: 10px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-weight: 700; font-size: 11px; color: var(--ink-soft); background: var(--line-soft); }
 .ed-modes button[aria-selected="true"] { background: var(--brand-tint); color: var(--brand); box-shadow: inset 0 0 0 1px var(--brand-border); }
 
-.ed-scroll { flex: 1; overflow: auto; -webkit-overflow-scrolling: touch; position: relative; touch-action: pan-x pan-y; }
+.ed-scroll { flex: 1; overflow: auto; -webkit-overflow-scrolling: touch; position: relative; }
 .ed-pages { padding: 14px 12px 120px; display: flex; flex-direction: column; align-items: center; gap: 14px; width: max-content; min-width: 100%; transform-origin: 50% 0; }
 .pg { position: relative; background: #fff; box-shadow: 0 1px 3px rgba(17,24,39,.12), 0 6px 18px rgba(17,24,39,.08); border-radius: 2px; flex: none; }
 .pg-img { position: absolute; inset: 0; width: 100%; height: 100%; }
