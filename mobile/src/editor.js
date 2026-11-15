@@ -1470,15 +1470,34 @@ export async function openEditor({ name, id = null, bytes, mode = 'annotate', pr
   }
   // o teclado abre com animação: confere de novo quando a tela termina de encolher
   const keepVisibleSoon = () => { keepVisible(); setTimeout(keepVisible, 250); setTimeout(keepVisible, 600); };
+  // No iOS o teclado não encolhe a janela (innerHeight fica igual): ele cobre a página e o sistema
+  // empurra a tela para cima, escondendo o topo com "Salvar". A área visível de verdade é o
+  // visualViewport: prendemos o editor nela enquanto o teclado está aberto.
+  const vv = window.visualViewport;
+  const viewH = () => Math.round(vv ? vv.height : window.innerHeight);
+  fullHeight = Math.max(fullHeight, viewH());
   const onResize = () => {
-    fullHeight = Math.max(fullHeight, window.innerHeight);
-    const open = window.innerHeight < fullHeight - 150;
+    fullHeight = Math.max(fullHeight, viewH());
+    const open = viewH() < fullHeight - 150;
     root.classList.toggle('kbd', open);
+    if (open && vv) {
+      root.style.top = `${Math.round(vv.offsetTop)}px`;
+      root.style.height = `${viewH()}px`;
+      root.style.bottom = 'auto';
+    } else if (root.style.height) {
+      root.style.top = root.style.height = root.style.bottom = '';
+      window.scrollTo(0, 0);
+    }
     if (open) keepVisibleSoon();
   };
   window.addEventListener('resize', onResize);
-  window.visualViewport?.addEventListener('resize', onResize);
-  const stopKeyboardWatch = () => { window.removeEventListener('resize', onResize); window.visualViewport?.removeEventListener('resize', onResize); };
+  vv?.addEventListener('resize', onResize);
+  vv?.addEventListener('scroll', onResize);
+  const stopKeyboardWatch = () => {
+    window.removeEventListener('resize', onResize);
+    vv?.removeEventListener('resize', onResize);
+    vv?.removeEventListener('scroll', onResize);
+  };
 
   current = { back };
   window.__editor = { doc, views, state }; // ajuda a depurar pelo WebView

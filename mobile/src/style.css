@@ -279,9 +279,12 @@ button.row:active { background: var(--line-soft); }
   display: flex; align-items: center; gap: 2px; background: var(--white); border-bottom: 1px solid var(--line);
   padding: calc(var(--safe-top) + 6px) 10px 6px 4px;
 }
-.ed-title { flex: 1; min-width: 0; display: flex; flex-direction: column; padding: 0 4px; }
-.ed-title strong { font-family: var(--f-title); font-size: 14.5px; line-height: 19px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ed-title small { font-size: 11.5px; color: var(--ink-faint); }
+/* Nome do arquivo numa linha própria, abaixo dos botões (na mesma linha sobrava espaço para 1 letra) */
+.ed-top { flex-wrap: wrap; row-gap: 0; }
+.ed-top [data-act="speak"] { margin-left: auto; }
+.ed-title { order: 10; flex: 1 1 100%; min-width: 0; display: flex; align-items: baseline; gap: 8px; padding: 2px 8px 0 12px; }
+.ed-title strong { min-width: 0; font-family: var(--f-title); font-size: 14.5px; line-height: 19px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ed-title small { flex: none; font-size: 11.5px; color: var(--ink-faint); white-space: nowrap; }
 .ed-top .btn { margin-left: 6px; }
 
 .ed-modes { display: grid; grid-template-columns: repeat(5, 1fr); gap: 5px; background: var(--white); padding: 6px 10px 8px; border-bottom: 1px solid var(--line); }
