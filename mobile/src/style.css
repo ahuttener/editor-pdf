@@ -204,6 +204,7 @@ button.row:active { background: var(--line-soft); }
 }
 .sheet-root.open .sheet-backdrop { opacity: 1; }
 .sheet-root.open .sheet { transform: none; }
+.sheet-x { position: absolute; top: 8px; right: 10px; z-index: 1; }
 .sheet-grip { width: 40px; height: 4px; border-radius: 4px; background: #d9dbe0; margin: 6px auto 8px; }
 .sheet-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
 .sheet-head h3 { font-size: 17px; line-height: 24px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

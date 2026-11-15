@@ -21,7 +21,9 @@ export function sheet(content, { title = '', onClose } = {}) {
     <div class="sheet-backdrop" aria-hidden="true"></div>
     <div class="sheet" tabindex="-1">
       <div class="sheet-grip" aria-hidden="true"></div>
-      ${title ? `<div class="sheet-head"><h3 id="${id}" tabindex="-1">${esc(title)}</h3><button class="icon-btn" data-close aria-label="${esc(t('Fechar'))}">${icon('close')}</button></div>` : ''}
+      ${title ? `<div class="sheet-head"><h3 id="${id}" tabindex="-1">${esc(title)}</h3><button class="icon-btn" data-close aria-label="${esc(t('Fechar'))}">${icon('close')}</button></div>`
+        // Sem título também há "Fechar": com o fundo inerte, é a saída de quem usa VoiceOver/TalkBack
+        : `<button class="icon-btn sheet-x" data-close aria-label="${esc(t('Fechar'))}">${icon('close')}</button>`}
       <div class="sheet-body"></div>
     </div>
   </div>`);
