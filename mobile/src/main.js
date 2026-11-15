@@ -18,7 +18,7 @@ import { savedSignature, clearSignature } from './signature.js';
 import { TOOL_GROUPS, TOOL_ACTIONS, setupTools, ensureUnlocked } from './tools.js';
 import { maybeShowDonation } from './donate.js';
 
-const VERSION = '1.0.0';
+const VERSION = '1.0.2';
 const SITE = 'https://cybersecinfo.com/';
 const INSTAGRAM = 'https://www.instagram.com/cyber_secinfo/';
 
