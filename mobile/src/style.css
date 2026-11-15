@@ -221,7 +221,7 @@ button.row:active { background: var(--line-soft); }
 .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
 .field span { font-size: 12.5px; font-weight: 600; color: var(--ink-soft); }
 .field input { height: 48px; border-radius: var(--r); border: 1px solid var(--line); background: var(--cream); padding: 0 14px; font: inherit; font-size: 15px; color: var(--ink); user-select: text; -webkit-user-select: text; }
-.field input:focus { outline: none; border-color: var(--blue); background: var(--white); }
+.field input:focus { outline: none; border-color: var(--blue); background: var(--white); box-shadow: 0 0 0 3px rgba(37,99,235,.25); }
 .field select { height: 48px; border-radius: var(--r); border: 1px solid var(--line); background: var(--cream); padding: 0 12px; font: inherit; font-size: 15px; color: var(--ink); }
 .field input[type="color"] { padding: 4px; width: 72px; }
 .check { display: flex; align-items: center; gap: 12px; min-height: 44px; margin: -4px 0 12px; font-size: 15px; }
@@ -287,7 +287,7 @@ button.row:active { background: var(--line-soft); }
 .ed-modes button { height: 46px; border-radius: 10px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-weight: 700; font-size: 11px; color: var(--ink-soft); background: var(--line-soft); }
 .ed-modes button[aria-selected="true"] { background: var(--brand-tint); color: var(--brand); box-shadow: inset 0 0 0 1px var(--brand-border); }
 
-.ed-scroll { flex: 1; overflow: auto; -webkit-overflow-scrolling: touch; position: relative; }
+.ed-scroll { flex: 1; overflow: auto; -webkit-overflow-scrolling: touch; position: relative; touch-action: pan-x pan-y; }
 .ed-pages { padding: 14px 12px 120px; display: flex; flex-direction: column; align-items: center; gap: 14px; width: max-content; min-width: 100%; transform-origin: 50% 0; }
 .pg { position: relative; background: #fff; box-shadow: 0 1px 3px rgba(17,24,39,.12), 0 6px 18px rgba(17,24,39,.08); border-radius: 2px; flex: none; }
 .pg-img { position: absolute; inset: 0; width: 100%; height: 100%; }
@@ -387,3 +387,7 @@ body[data-tab="home"] .main { overflow: hidden; }
 .home .brand-card img { width: 56px; height: 56px; }
 .brand-card .links { grid-template-columns: auto auto; justify-content: start; margin-top: 6px; }
 .brand-card .linkbtn { height: 32px; padding: 0 10px; font-size: 12px; min-width: 0; white-space: nowrap; }
+
+/* Acessibilidade: texto só para leitor de tela; foco programático do painel sem contorno */
+.sr-only { position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.sheet:focus, .sheet-head h3:focus { outline: none; }

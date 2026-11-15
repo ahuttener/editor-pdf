@@ -11,6 +11,12 @@ import { ttsSupported, readAloudPdf } from './voice.js';
 
 const TEXT_COLORS = ['#111827', '#c8141c', '#1c4a82', '#187434', '#7c3aed', '#ffffff'];
 const HL_COLORS = ['#ffe14d', '#8ef07a', '#ff8ad8', '#7fd8ff'];
+// Nome falado de cada cor (VoiceOver/TalkBack leriam só o código hexadecimal).
+const COLOR_NAME = {
+  '#111827': 'Preto', '#c8141c': 'Vermelho', '#1c4a82': 'Azul', '#187434': 'Verde', '#7c3aed': 'Roxo', '#ffffff': 'Branco',
+  '#ffe14d': 'Amarelo', '#8ef07a': 'Verde-claro', '#ff8ad8': 'Rosa', '#7fd8ff': 'Azul-claro',
+};
+export const colorName = (c) => t(COLOR_NAME[String(c).toLowerCase()] || 'Cor');
 const FONT = 'Helvetica, Arial, sans-serif';
 // ferramentas em que tocar numa caixinha/linha de formulário sem campos preenche ali
 const BOX_TOOLS = ['fill', 'text', 'edittext'];
@@ -131,8 +137,8 @@ export async function openEditor({ name, id = null, bytes, mode = 'annotate', pr
       <div class="ed-hint" hidden></div>
       <div class="ed-selbar" hidden>
         <button data-sel="color" aria-label="${t('Cor')}"><span class="dot"></span><span>${t('Cor')}</span></button>
-        <button data-sel="smaller" class="txt-only" aria-label="A-">A<sup>−</sup></button>
-        <button data-sel="bigger" class="txt-only" aria-label="A+">A<sup>+</sup></button>
+        <button data-sel="smaller" class="txt-only" aria-label="${t('Diminuir texto')}"><span aria-hidden="true">A<sup>−</sup></span></button>
+        <button data-sel="bigger" class="txt-only" aria-label="${t('Aumentar texto')}"><span aria-hidden="true">A<sup>+</sup></span></button>
         <button data-sel="dup">${icon('copy', { size: 19 })}<span>${t('Duplicar')}</span></button>
         <button data-sel="del" class="danger">${icon('trash', { size: 19 })}<span>${t('Excluir')}</span></button>
       </div>
@@ -180,7 +186,10 @@ export async function openEditor({ name, id = null, bytes, mode = 'annotate', pr
       const vp = await viewportOf(p);
       const w = Math.round(bw);
       const hgt = Math.round((bw * vp.height) / vp.width);
-      const el = h(`<div class="pg" style="width:${w}px;height:${hgt}px"><canvas class="pg-img"></canvas><div class="pg-fab"></div><div class="pg-form"></div><span class="pg-num">${doc.pages.indexOf(p) + 1}</span></div>`);
+      const n = doc.pages.indexOf(p) + 1;
+      // Para leitor de tela: a página é uma região com nome ("Página 2 de 5") e, quando montada,
+      // recebe o texto do PDF numa camada invisível; os canvas são só desenho (aria-hidden).
+      const el = h(`<div class="pg" role="group" aria-label="${esc(t('Página {n} de {total}', { n, total: doc.pages.length }))}" style="width:${w}px;height:${hgt}px"><canvas class="pg-img" aria-hidden="true"></canvas><div class="pg-fab" aria-hidden="true"></div><div class="pg-form"></div><div class="sr-only pg-text"></div><span class="pg-num" aria-hidden="true">${n}</span></div>`);
       el.dataset.key = p.key;
       pagesEl.append(el);
       views.set(p.key, { el, vp, w, h: hgt, rot: p.rotate, mounted: false });
@@ -213,6 +222,12 @@ export async function openEditor({ name, id = null, bytes, mode = 'annotate', pr
     img.height = Math.round(rvp.height);
     v.task = pg.render({ canvasContext: img.getContext('2d'), canvas: img, viewport: rvp, annotationMode: 1 });
     v.task.promise.catch(() => {});
+    // Texto da página para o leitor de tela (PDF escaneado não tem texto: avisa).
+    pg.getTextContent().then((tc) => {
+      if (!v.mounted) return;
+      const txt = tc.items.map((it) => it.str + (it.hasEOL ? '\n' : ' ')).join('').replace(/[ \t]+/g, ' ').trim();
+      $('.pg-text', v.el).textContent = txt || t('Página sem texto (imagem). Use OCR em Ferramentas para reconhecer o texto.');
+    }).catch(() => {});
     // Camada de edição
     const wrap = $('.pg-fab', v.el);
     const c = document.createElement('canvas');
@@ -582,7 +597,7 @@ export async function openEditor({ name, id = null, bytes, mode = 'annotate', pr
 
   function pickColor(list) {
     return new Promise((resolve) => {
-      const s = sheet(`<div class="swatches">${list.map((c) => `<button class="swatch xl" style="--c:${c}" data-c="${c}" aria-label="${c}"></button>`).join('')}</div>`,
+      const s = sheet(`<div class="swatches">${list.map((c) => `<button class="swatch xl" style="--c:${c}" data-c="${c}" aria-label="${esc(colorName(c))}"></button>`).join('')}</div>`,
         { title: t('Cor'), onClose: (v) => resolve(v || null) });
       s.el.querySelectorAll('[data-c]').forEach((b) => b.addEventListener('click', () => s.close(b.dataset.c)));
     });

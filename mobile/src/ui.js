@@ -12,25 +12,43 @@ export function h(html) {
 }
 
 // Painel que sobe da parte de baixo. Devolve { el, close }; onClose roda uma vez.
+// Acessível: role=dialog com título, foco vai para o painel ao abrir e volta ao botão de origem ao
+// fechar, o resto da tela fica inerte (VoiceOver/TalkBack não "vazam" para trás) e Esc fecha.
+let sheetSeq = 0;
 export function sheet(content, { title = '', onClose } = {}) {
-  const root = h(`<div class="sheet-root" role="dialog" aria-modal="true">
-    <div class="sheet-backdrop"></div>
-    <div class="sheet">
-      <div class="sheet-grip"></div>
-      ${title ? `<div class="sheet-head"><h3>${esc(title)}</h3><button class="icon-btn" data-close aria-label="${esc(t('Fechar'))}">${icon('close')}</button></div>` : ''}
+  const id = `sheet-t-${++sheetSeq}`;
+  const root = h(`<div class="sheet-root" role="dialog" aria-modal="true" ${title ? `aria-labelledby="${id}"` : `aria-label="${esc(t('Painel'))}"`}>
+    <div class="sheet-backdrop" aria-hidden="true"></div>
+    <div class="sheet" tabindex="-1">
+      <div class="sheet-grip" aria-hidden="true"></div>
+      ${title ? `<div class="sheet-head"><h3 id="${id}" tabindex="-1">${esc(title)}</h3><button class="icon-btn" data-close aria-label="${esc(t('Fechar'))}">${icon('close')}</button></div>` : ''}
       <div class="sheet-body"></div>
     </div>
   </div>`);
   const body = $('.sheet-body', root);
   if (typeof content === 'string') body.innerHTML = content; else body.append(content);
+  const opener = document.activeElement;
+  // Tudo que já está na tela fica inerte enquanto o painel está aberto.
+  const inerted = [...document.body.children].filter((el) => el !== root && el.id !== 'toast' && !el.inert);
+  inerted.forEach((el) => { el.inert = true; });
   document.body.append(root);
-  requestAnimationFrame(() => root.classList.add('open'));
+  requestAnimationFrame(() => {
+    root.classList.add('open');
+    // Foco no título (o leitor de tela anuncia o painel); sem título, no próprio painel.
+    ($('.sheet-head h3', root) || $('.sheet', root)).focus({ preventScroll: true });
+  });
   let closed = false;
+  const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); close(); } };
+  root.addEventListener('keydown', onKey);
   const close = (value) => {
     if (closed) return;
     closed = true;
     root.classList.remove('open');
+    inerted.forEach((el) => { el.inert = false; });
     setTimeout(() => root.remove(), 220);
+    if (opener && opener.isConnected && typeof opener.focus === 'function') {
+      try { opener.focus({ preventScroll: true }); } catch { /* ok */ }
+    }
     onClose?.(value);
   };
   $('.sheet-backdrop', root).addEventListener('click', () => close());
@@ -117,7 +135,7 @@ export function toast(text, kind = '') {
 }
 
 export function busy(text) {
-  const el = h(`<div class="busy" role="status"><div class="busy-card"><div class="spinner"></div><span>${esc(text)}</span></div></div>`);
+  const el = h(`<div class="busy" role="status" aria-live="assertive"><div class="busy-card"><div class="spinner"></div><span>${esc(text)}</span></div></div>`);
   document.body.append(el);
   const stop = () => el.remove();
   stop.update = (msg) => { $('span', el).textContent = msg; };

@@ -128,7 +128,7 @@ function openReadingSheetWeb({ synth, chunks, lang, voice, truncated }) {
   let idx = 0, rate = 1, finished = false;
 
   const content = `
-    <p class="sheet-text" data-status></p>
+    <p class="sheet-text"><span data-status role="status" aria-live="polite"></span> <span data-count aria-hidden="true"></span></p>
     ${truncated ? `<p class="form-note">${esc(t('Documento muito longo: vou ler apenas o começo.'))}</p>` : ''}
     <label class="field"><span>${esc(t('Velocidade'))}</span>
       <select data-rate>
@@ -150,10 +150,13 @@ function openReadingSheetWeb({ synth, chunks, lang, voice, truncated }) {
 
   const statusEl = $('[data-status]', s.el);
   const pauseBtn = $('[data-pause]', s.el);
+  const countEl = $('[data-count]', s.el);
+  // A região "ao vivo" só muda em início/fim (o leitor de tela anuncia uma vez e não fala por cima
+  // da leitura); o contador de trechos é visual.
   const setStatus = () => {
-    statusEl.textContent = finished
-      ? t('Leitura concluída.')
-      : `${t('Lendo em {idioma}', { idioma: name })} — ${Math.min(idx + 1, chunks.length)}/${chunks.length}`;
+    const msg = finished ? t('Leitura concluída.') : t('Lendo em {idioma}', { idioma: name });
+    if (statusEl.textContent !== msg) statusEl.textContent = msg;
+    countEl.textContent = finished ? '' : `— ${Math.min(idx + 1, chunks.length)}/${chunks.length}`;
   };
   setStatus();
 
@@ -192,7 +195,7 @@ function openReadingSheetNative({ chunks, lang, truncated }) {
   let idx = 0, rate = 1, finished = false, paused = false, stopped = false;
 
   const content = `
-    <p class="sheet-text" data-status></p>
+    <p class="sheet-text"><span data-status role="status" aria-live="polite"></span> <span data-count aria-hidden="true"></span></p>
     ${truncated ? `<p class="form-note">${esc(t('Documento muito longo: vou ler apenas o começo.'))}</p>` : ''}
     <label class="field"><span>${esc(t('Velocidade'))}</span>
       <select data-rate>
@@ -214,10 +217,13 @@ function openReadingSheetNative({ chunks, lang, truncated }) {
 
   const statusEl = $('[data-status]', s.el);
   const pauseBtn = $('[data-pause]', s.el);
+  const countEl = $('[data-count]', s.el);
+  // A região "ao vivo" só muda em início/fim (o leitor de tela anuncia uma vez e não fala por cima
+  // da leitura); o contador de trechos é visual.
   const setStatus = () => {
-    statusEl.textContent = finished
-      ? t('Leitura concluída.')
-      : `${t('Lendo em {idioma}', { idioma: name })} — ${Math.min(idx + 1, chunks.length)}/${chunks.length}`;
+    const msg = finished ? t('Leitura concluída.') : t('Lendo em {idioma}', { idioma: name });
+    if (statusEl.textContent !== msg) statusEl.textContent = msg;
+    countEl.textContent = finished ? '' : `— ${Math.min(idx + 1, chunks.length)}/${chunks.length}`;
   };
   setStatus();
 

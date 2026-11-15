@@ -42,7 +42,7 @@ function drawPad(resolve) {
   let color = colors[0];
   const s = sheet(`<div class="sig-pad"><canvas></canvas><span class="sig-line"></span><span class="sig-hint">${t('Desenhe sua assinatura')}</span></div>
     <div class="sig-tools">
-      ${colors.map((c, i) => `<button class="swatch ${i === 0 ? 'on' : ''}" style="--c:${c}" data-color="${c}" aria-label="${t('Cor')}"></button>`).join('')}
+      ${colors.map((c, i) => `<button class="swatch ${i === 0 ? 'on' : ''}" style="--c:${c}" data-color="${c}" aria-label="${t(i === 0 ? 'Preto' : 'Azul')}" aria-pressed="${i === 0}"></button>`).join('')}
       <span class="grow"></span>
       <button class="btn btn-text" data-clear>${t('Limpar')}</button>
     </div>
@@ -93,7 +93,7 @@ function drawPad(resolve) {
   });
   s.el.querySelectorAll('[data-color]').forEach((b) => b.addEventListener('click', () => {
     color = b.dataset.color;
-    s.el.querySelectorAll('[data-color]').forEach((x) => x.classList.toggle('on', x === b));
+    s.el.querySelectorAll('[data-color]').forEach((x) => { x.classList.toggle('on', x === b); x.setAttribute('aria-pressed', String(x === b)); });
   }));
   useBtn.addEventListener('click', () => {
     const url = trim(canvas);
