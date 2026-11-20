@@ -17,10 +17,13 @@ import { mergePdfs, imagesToPdf, loadPdf, thumbnail } from './pdf.js';
 import { savedSignature, clearSignature } from './signature.js';
 import { TOOL_GROUPS, TOOL_ACTIONS, setupTools, ensureUnlocked } from './tools.js';
 import { maybeShowDonation } from './donate.js';
+import { readAloudPdf } from './voice.js';
 
 const VERSION = '1.0.2';
 const SITE = 'https://cybersecinfo.com/';
 const INSTAGRAM = 'https://www.instagram.com/cyber_secinfo/';
+// No iPhone o app se chama PDF Voice (foco em ouvir); no Android segue Editor PDF.
+const APP_NAME = Capacitor.getPlatform() === 'ios' ? 'PDF Voice' : 'Editor PDF';
 
 const app = $('#app');
 let tab = 'home';
@@ -35,6 +38,15 @@ async function openFromDevice(mode = 'annotate') {
   const bytes = await ensureUnlocked(new Uint8Array(await file.arrayBuffer()), file.name);
   if (!bytes) return;
   await openEditor({ name: file.name, bytes, mode, protection: protectionOf(bytes), onExit: render });
+}
+
+// Modo Ouvir: escolhe um PDF e já começa a leitura, sem passar pelo editor.
+async function listenFlow() {
+  const [file] = await pickFiles({ accept: 'application/pdf' });
+  if (!file) return;
+  const bytes = await ensureUnlocked(new Uint8Array(await file.arrayBuffer()), file.name);
+  if (!bytes) return;
+  await readAloudPdf(bytes);
 }
 
 async function openFromLibrary(meta, mode = 'annotate') {
@@ -145,12 +157,13 @@ function homeView() {
     <header class="hero">
       <div class="hero-row">
         <img class="hero-icon" src="img/icon.png" alt="">
-        <span class="hero-name">Editor PDF</span>
+        <span class="hero-name">${APP_NAME}</span>
         <button class="pill" data-act="lang" aria-label="${t('Idioma')}: ${getLang() === 'en' ? 'English' : 'Português'}">${icon('globe', { size: 15 })}<span>${getLang().toUpperCase()}</span></button>
       </div>
-      <h1>${t('Edite, assine e organize seus PDFs')}</h1>
-      <p>${t('Tudo no seu celular, sem enviar seus documentos para a internet.')}</p>
-      <button class="hero-cta" data-act="open">${icon('plus', { size: 20, stroke: 2.4 })}<span>${t('Abrir PDF')}</span></button>
+      <h1>${t('Ouça seus PDFs em voz alta')}</h1>
+      <p>${t('Frase por frase, no idioma do documento, com o texto em destaque. Tudo no seu aparelho, sem internet.')}</p>
+      <button class="hero-cta" data-act="listen">${icon('speaker', { size: 20, stroke: 2.2 })}<span>${t('Ouvir um PDF')}</span></button>
+      <button class="hero-cta2" data-act="open">${icon('plus', { size: 18, stroke: 2.4 })}<span>${t('Abrir para editar')}</span></button>
     </header>
     <div class="body">
       <h2 class="sec">${t('Atalhos')}</h2>
@@ -203,7 +216,7 @@ function settingsView() {
       <h2 class="sec">${t('Sobre')}</h2>
       <div class="card about">
         <img class="emblem" src="img/emblem.png" alt="CyberSecInfo">
-        <strong>Editor PDF</strong>
+        <strong>${APP_NAME}</strong>
         <small>${t('Versão {v}', { v: VERSION })} · ${t('por CyberSecInfo — Information Security')}</small>
         <p class="privacy">${icon('shield', { size: 16 })}<span>${t('Seus documentos não saem do aparelho.')}</span></p>
         <div class="links">
@@ -249,6 +262,7 @@ app.addEventListener('click', async (e) => {
   if (q) return openFromDevice(EDITOR_MODES[q] || q);
   const act = el.dataset.act;
   if (act === 'open') return openFromDevice();
+  if (act === 'listen') return listenFlow();
   if (act === 'lang') { setLang(getLang() === 'pt' ? 'en' : 'pt'); render(); }
   if (act === 'clear-sig') { clearSignature(); render(); }
 });
